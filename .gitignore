@@ -1,0 +1,32 @@
+# 문서 스냅샷 (원본은 Notion)
+/docs
+
+# 환경변수 · 시크릿
+.env
+.env.*
+!.env.example
+*.pem
+*-keypair.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Rust / Anchor
+target/
+.anchor/
+
+# OS · 에디터
+.DS_Store
+.idea/
+.vscode/
