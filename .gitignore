@@ -30,3 +30,6 @@ target/
 .DS_Store
 .idea/
 .vscode/
+
+# Claude 로컬 설정
+.claude/

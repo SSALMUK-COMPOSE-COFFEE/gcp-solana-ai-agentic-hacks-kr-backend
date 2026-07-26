@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: chongdae
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d chongdae"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./api
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://app:app@db:5432/chongdae
+      CHAIN_SVC_URL: http://chain-svc:8081
+      APP_VERSION: 0.1.0
+    depends_on:
+      db:
+        condition: service_healthy
+      chain-svc:
+        condition: service_started
+
+  chain-svc:
+    build: ./chain-svc
+    environment:
+      PORT: 8081
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+      USDC_MINT: 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+
+volumes:
+  dbdata:
