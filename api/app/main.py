@@ -8,6 +8,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.db import async_session, init_db
 from app.errors import register_error_handlers
+from app.routers import auth
 
 
 @asynccontextmanager
@@ -19,6 +20,8 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="팬덤 총대 에이전트 API", version=settings.app_version, lifespan=lifespan)
 
 register_error_handlers(app)
+
+app.include_router(auth.router)
 
 
 async def _check_db() -> str:
