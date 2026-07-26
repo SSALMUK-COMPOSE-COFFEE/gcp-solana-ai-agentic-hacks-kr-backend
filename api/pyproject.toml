@@ -1,0 +1,22 @@
+[project]
+name = "api"
+version = "0.1.0"
+description = "팬덤 총대 에이전트 — FastAPI 메인 백엔드"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "sqlmodel>=0.0.22",
+    "asyncpg>=0.30",
+    "httpx>=0.28",
+    "pydantic-settings>=2.7",
+    "pyjwt>=2.10",
+    "passlib[bcrypt]>=1.7",
+]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.25", "ruff>=0.9"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
