@@ -1,39 +1,53 @@
-import os
+from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
-APP_VERSION = os.environ.get("APP_VERSION", "0.1.0")
-CHAIN_SVC_URL = os.environ.get("CHAIN_SVC_URL", "http://localhost:8081")
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+from app.config import settings
+from app.db import async_session, init_db
+from app.errors import register_error_handlers
 
-app = FastAPI(title="팬덤 총대 에이전트 API", version=APP_VERSION)
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    await init_db()
+    yield
+
+
+app = FastAPI(title="팬덤 총대 에이전트 API", version=settings.app_version, lifespan=lifespan)
+
+register_error_handlers(app)
+
+
+async def _check_db() -> str:
+    try:
+        async with async_session() as session:
+            await session.execute(text("SELECT 1"))
+        return "up"
+    except Exception:
+        return "down"
+
+
+async def _check_chain_svc() -> str:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            r = await client.get(f"{settings.chain_svc_url}/health")
+            return "up" if r.status_code == 200 else "down"
+    except httpx.HTTPError:
+        return "down"
 
 
 @app.get("/health")
 async def health() -> JSONResponse:
-    db_status = "down"
-    chain_status = "down"
-
-    if DATABASE_URL:
-        db_status = "up"
-
-    try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get(f"{CHAIN_SVC_URL}/health")
-            if r.status_code == 200:
-                chain_status = "up"
-    except httpx.HTTPError:
-        pass
-
+    db_status = await _check_db()
+    chain_status = await _check_chain_svc()
     ok = db_status == "up" and chain_status == "up"
     body = {
         "status": "ok" if ok else "degraded",
-        "version": APP_VERSION,
+        "version": settings.app_version,
         "db": db_status,
         "chainSvc": chain_status,
     }
     return JSONResponse(body, status_code=200 if ok else 503)
-
-
