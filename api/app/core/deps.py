@@ -4,9 +4,9 @@ import jwt
 from fastapi import Depends, Header, HTTPException
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app import security
-from app.config import settings
-from app.db import get_session
+from app.core import security
+from app.core.config import settings
+from app.core.db import get_session
 from app.models import User
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]

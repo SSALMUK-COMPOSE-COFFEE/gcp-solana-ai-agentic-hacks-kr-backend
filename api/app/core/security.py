@@ -5,7 +5,7 @@ from typing import Any
 import bcrypt
 import jwt
 
-from app.config import settings
+from app.core.config import settings
 
 ACCESS = "access"
 REFRESH = "refresh"

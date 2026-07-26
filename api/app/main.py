@@ -5,9 +5,9 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.config import settings
-from app.db import async_session, init_db
-from app.errors import register_error_handlers
+from app.core.config import settings
+from app.core.db import async_session, init_db
+from app.core.errors import register_error_handlers
 from app.routers import auth
 
 

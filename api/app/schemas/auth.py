@@ -1,11 +1,7 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
-from pydantic.alias_generators import to_camel
+from pydantic import EmailStr, Field, field_validator
 
-from app.security import PASSWORD_MAX_BYTES
-
-
-class CamelModel(BaseModel):
-    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+from app.core.security import PASSWORD_MAX_BYTES
+from app.schemas.base import CamelModel
 
 
 class SignupRequest(CamelModel):
