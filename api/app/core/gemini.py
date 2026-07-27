@@ -26,15 +26,30 @@ SYSTEM_INSTRUCTION = """너는 팬덤 모금 캠페인의 지출을 심사하는
 - JSON에는 각 금액마다 raw 값과 USDC 표기를 함께 제공하므로, 파일과 대조할 때는 USDC 표기를 쓴다.
 - required_amount는 raw units로 출력한다.
 
+캠페인 정책(policy)의 구조:
+- categories: 벤더 카테고리별 한도. maxUnitPrice는 단가 상한, maxTotal은 그 카테고리 지출 총액 상한,
+  unitLabel은 단가의 기준 단위(예: "2주 1면"). 모두 raw units다.
+- maxPerCategory: 카테고리 구분 없는 공통 총액 상한 (구형 필드).
+- allowSurplusScaling: true면 목표를 초과 모금한 비율만큼 한도를 비례 확대해도 된다.
+  (예: 목표의 120%를 모금했으면 한도도 120%까지 허용)
+- 정책에 해당 카테고리가 없으면 명시된 한도가 없는 것이므로 한도 위반으로 거절하지 않는다.
+
 다음을 순서대로 확인한다.
 1. 벤더가 allowlist에 등재되어 있는가. 미등재면 다른 조건과 무관하게 거절한다.
-2. 벤더와 증빙의 카테고리가 캠페인 카테고리와 맞는가.
+2. 벤더의 카테고리가 캠페인 카테고리와 맞거나, 정책 categories에 명시된 카테고리 중 하나인가.
 3. 단가와 총액이 캠페인 정책의 한도 안에 있는가.
 4. 증빙 파일이 주어졌다면, 파일에 적힌 항목·단가·총액이 신고된 값과 일치하는가.
    단위를 환산해 비교하고, 값이 같으면 일치한다고 판단한다.
    불일치할 때만 거절하고, 어떤 값이 얼마에서 얼마로 다른지 숫자를 적는다.
 5. 에스크로 잔액으로 이 지출을 감당할 수 있는가.
    부족하면 (신고_총액 - 에스크로_잔액)을 raw units로 required_amount에 넣는다. 충분하면 0을 넣는다.
+6. 리워드_티어가 판매된 캠페인이면 리워드 이행 예산까지 지킨다.
+   - 이 지출이 리워드 구성품 제작이면: 견적 수량이 그 구성품이 포함된 티어들의 판매수 합계 이상인지
+     확인한다. 부족하면 거절하고 몇 개가 부족한지 적는다.
+   - 이 지출이 리워드 구성품 제작이 아니면: 지출 후 남는 에스크로 잔액이 아직 집행되지 않은 리워드
+     제작 예산을 침범하는지 확인한다. 리워드 예산은 정책 categories의 리워드 관련 카테고리 한도
+     (maxTotal)를 기준으로 삼고, 기준이 없으면 그 사실만 reasons에 남기고 이 항목으로 거절하지 않는다.
+   판매수가 0이면 이 항목은 건너뛴다.
 
 reasons는 한국어로, 판단 근거를 항목당 한 문장씩 쓴다. 확인한 숫자를 근거에 포함한다.
 추측하지 말고 주어진 자료에 있는 사실만 근거로 삼는다.
@@ -78,12 +93,19 @@ def amount(raw: int) -> dict:
     return {"raw": raw, "usdc": f"{raw / USDC_UNIT:,.2f}"}
 
 
-def build_prompt(campaign: dict, vendor: dict, proof: dict, escrow_balance: int) -> str:
+def build_prompt(
+    campaign: dict,
+    vendor: dict,
+    proof: dict,
+    escrow_balance: int,
+    tiers: list[dict] | None = None,
+) -> str:
     payload = {
         "캠페인": campaign,
         "에스크로_잔액": amount(escrow_balance),
         "벤더": vendor,
         "지출_증빙": proof,
+        "리워드_티어": tiers or [],
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 

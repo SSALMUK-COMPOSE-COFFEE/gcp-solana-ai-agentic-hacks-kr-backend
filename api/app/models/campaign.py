@@ -54,3 +54,18 @@ class Campaign(SQLModel, table=True):
     escrow_pda: str | None = None
 
     created_at: datetime = Field(default_factory=utcnow, sa_column=dt_column(nullable=False))
+
+
+class RewardTier(SQLModel, table=True):
+    __tablename__ = "reward_tiers"
+
+    id: int | None = Field(default=None, primary_key=True)
+    campaign_id: int = Field(foreign_key="campaigns.id", index=True)
+
+    title: str
+    price: int = Field(sa_column=amount_column())
+    items: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    limit: int | None = Field(default=None)
+    sold_count: int = Field(default=0, sa_column=int_zero_column())
+
+    created_at: datetime = Field(default_factory=utcnow, sa_column=dt_column(nullable=False))

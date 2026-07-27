@@ -10,6 +10,7 @@ from app.models import (
     Micropay,
     PaymentRequest,
     PaymentStatus,
+    RewardTier,
     utcnow,
 )
 from app.schemas.payment import MicropayRequest, PaymentQrRequest, SolanaPayTxRequest
@@ -19,6 +20,9 @@ router = APIRouter(prefix="/payment", tags=["payment"])
 CAMPAIGN_NOT_FOUND = "존재하지 않는 캠페인입니다."
 CAMPAIGN_CLOSED = "이미 마감된 캠페인입니다."
 REFERENCE_NOT_FOUND = "존재하지 않는 결제 요청입니다."
+TIER_NOT_FOUND = "존재하지 않는 티어입니다."
+TIER_SOLD_OUT = "품절된 티어입니다."
+AMOUNT_REQUIRED = "금액 또는 티어를 지정해야 합니다."
 
 
 async def _open_campaign(session: SessionDep, campaign_id: int) -> Campaign:
@@ -55,6 +59,7 @@ async def _confirm(session: SessionDep, payment: PaymentRequest, signature: str)
         Contribution(
             campaign_id=payment.campaign_id,
             user_id=payment.user_id,
+            tier_id=payment.tier_id,
             wallet_address=payment.contributor_wallet,
             amount=payment.amount,
             reference=payment.reference,
@@ -65,6 +70,12 @@ async def _confirm(session: SessionDep, payment: PaymentRequest, signature: str)
     campaign.raised_amount += payment.amount
     if first_contribution:
         campaign.contributor_count += 1
+
+    if payment.tier_id is not None:
+        tier = await session.get(RewardTier, payment.tier_id)
+        if tier is not None:
+            tier.sold_count += 1
+            session.add(tier)
 
     payment.status = PaymentStatus.CONFIRMED
     payment.tx_signature = signature
@@ -79,18 +90,30 @@ async def create_payment_request(
 ) -> dict:
     campaign = await _open_campaign(session, body.campaign_id)
 
+    amount = body.amount
+    if body.tier_id is not None:
+        tier = await session.get(RewardTier, body.tier_id)
+        if tier is None or tier.campaign_id != campaign.id:
+            raise HTTPException(status_code=400, detail=TIER_NOT_FOUND)
+        if tier.limit is not None and tier.sold_count >= tier.limit:
+            raise HTTPException(status_code=409, detail=TIER_SOLD_OUT)
+        amount = tier.price
+    if amount is None:
+        raise HTTPException(status_code=400, detail=AMOUNT_REQUIRED)
+
     created = await chain.post("/pay/url", {})
 
     payment = PaymentRequest(
         reference=created["reference"],
         campaign_id=campaign.id,
         user_id=user.id,
-        amount=body.amount,
+        tier_id=body.tier_id,
+        amount=amount,
     )
     session.add(payment)
     await session.commit()
 
-    return {"reference": created["reference"], "url": created["url"]}
+    return {"reference": created["reference"], "url": created["url"], "amount": amount}
 
 
 @router.get("/solana-pay/tx")

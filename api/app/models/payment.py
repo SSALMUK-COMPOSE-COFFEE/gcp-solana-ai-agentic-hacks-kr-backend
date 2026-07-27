@@ -27,6 +27,7 @@ class PaymentRequest(SQLModel, table=True):
 
     campaign_id: int = Field(foreign_key="campaigns.id", index=True)
     user_id: int | None = Field(default=None, foreign_key="users.id", index=True)
+    tier_id: int | None = Field(default=None, foreign_key="reward_tiers.id")
     amount: int = Field(sa_column=amount_column())
 
     status: str = Field(default=PaymentStatus.PENDING, index=True)

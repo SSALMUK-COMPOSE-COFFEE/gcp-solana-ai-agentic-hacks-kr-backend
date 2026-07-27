@@ -11,6 +11,7 @@ from app.models import (
     Campaign,
     Proof,
     ProofStatus,
+    RewardTier,
     Vendor,
 )
 from app.schemas.agent import EvaluatePolicyRequest
@@ -37,6 +38,20 @@ async def evaluate_policy(
         raise HTTPException(status_code=404, detail=PROOF_NOT_FOUND)
 
     vendor = await session.get(Vendor, proof.vendor_id) if proof.vendor_id else None
+
+    tier_rows = await session.exec(
+        select(RewardTier).where(RewardTier.campaign_id == campaign.id)
+    )
+    tiers = [
+        {
+            "이름": tier.title,
+            "가격": gemini.amount(tier.price),
+            "구성품": tier.items,
+            "판매수": tier.sold_count,
+            "한정수량": tier.limit,
+        }
+        for tier in tier_rows.all()
+    ]
 
     prompt = gemini.build_prompt(
         campaign={
@@ -69,6 +84,7 @@ async def evaluate_policy(
             "첨부파일": bool(proof.file_url),
         },
         escrow_balance=settlement.available_balance(campaign),
+        tiers=tiers,
     )
 
     document = await gemini.fetch_document(proof.file_url)

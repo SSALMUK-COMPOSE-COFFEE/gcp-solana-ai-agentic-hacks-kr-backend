@@ -12,6 +12,7 @@ class Contribution(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     campaign_id: int = Field(foreign_key="campaigns.id", index=True)
     user_id: int | None = Field(default=None, foreign_key="users.id", index=True)
+    tier_id: int | None = Field(default=None, foreign_key="reward_tiers.id")
     wallet_address: str = Field(index=True)
     amount: int = Field(sa_column=amount_column())
     reference: str | None = Field(default=None, index=True)

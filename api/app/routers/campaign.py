@@ -11,11 +11,16 @@ from app.models import (
     CampaignStatus,
     Contribution,
     Proof,
+    RewardTier,
     User,
     Vendor,
     utcnow,
 )
-from app.schemas.campaign import CreateCampaignRequest, UpdateCampaignRequest
+from app.schemas.campaign import (
+    CreateCampaignRequest,
+    CreateTierRequest,
+    UpdateCampaignRequest,
+)
 
 router = APIRouter(prefix="/campaign", tags=["campaign"])
 
@@ -75,7 +80,7 @@ async def create_campaign(
         uuid=campaign_uuid,
         title=body.title,
         category=body.category,
-        policy=body.policy,
+        policy=body.policy.to_stored(),
         goal_amount=body.goal_amount,
         deadline=deadline,
         owner_id=user.id,
@@ -152,6 +157,8 @@ async def update_campaign(
 
     if body.title is not None:
         campaign.title = body.title
+    if body.policy is not None:
+        campaign.policy = body.policy.to_stored()
     if body.deadline is not None:
         deadline = _to_utc(body.deadline)
         if deadline <= utcnow():
@@ -233,6 +240,56 @@ async def read_campaign_quotes(campaign_id: int, session: SessionDep) -> dict:
                 "fileUrl": proof.file_url,
             }
             for proof, vendor in result.all()
+        ]
+    }
+
+
+@router.post("/{campaign_id}/tiers", status_code=201)
+async def create_tier(
+    campaign_id: int, body: CreateTierRequest, user: CurrentUser, session: SessionDep
+) -> dict:
+    campaign = await _load_campaign(session, campaign_id)
+    if campaign.owner_id != user.id:
+        raise HTTPException(status_code=403, detail=NOT_EDITABLE)
+    if campaign.status != CampaignStatus.FUNDING:
+        raise HTTPException(status_code=409, detail=ALREADY_CLOSED)
+
+    tier = RewardTier(
+        campaign_id=campaign_id,
+        title=body.title,
+        price=body.price,
+        items=body.items,
+        limit=body.limit,
+    )
+    session.add(tier)
+    await session.commit()
+    await session.refresh(tier)
+
+    return {"tierId": tier.id}
+
+
+@router.get("/{campaign_id}/tiers")
+async def read_tiers(campaign_id: int, session: SessionDep) -> dict:
+    await _load_campaign(session, campaign_id)
+
+    result = await session.exec(
+        select(RewardTier)
+        .where(RewardTier.campaign_id == campaign_id)
+        .order_by(RewardTier.price.asc())
+    )
+
+    return {
+        "tiers": [
+            {
+                "tierId": tier.id,
+                "title": tier.title,
+                "price": tier.price,
+                "items": tier.items,
+                "limit": tier.limit,
+                "soldCount": tier.sold_count,
+                "remaining": tier.limit - tier.sold_count if tier.limit is not None else None,
+            }
+            for tier in result.all()
         ]
     }
 

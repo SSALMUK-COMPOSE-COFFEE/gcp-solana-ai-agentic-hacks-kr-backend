@@ -5,7 +5,8 @@ from app.schemas.base import CamelModel
 
 class PaymentQrRequest(CamelModel):
     campaign_id: int
-    amount: int = Field(gt=0)
+    amount: int | None = Field(default=None, gt=0)
+    tier_id: int | None = None
 
 
 class SolanaPayTxRequest(CamelModel):
