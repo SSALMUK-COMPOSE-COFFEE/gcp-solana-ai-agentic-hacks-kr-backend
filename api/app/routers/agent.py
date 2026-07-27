@@ -14,7 +14,8 @@ from app.models import (
     RewardTier,
     Vendor,
 )
-from app.schemas.agent import EvaluatePolicyRequest
+from app.models.proof import ProofType
+from app.schemas.agent import AuditRequest, EvaluatePolicyRequest
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -135,6 +136,75 @@ async def _execute(
 
     result = await settlement.release(session, campaign, vendor, proof, proof.amount)
     return {"executed": True, **result}
+
+
+@router.post("/audit")
+async def audit(body: AuditRequest, caller: AgentCaller, session: SessionDep) -> dict:
+    campaign = await session.get(Campaign, body.campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail=CAMPAIGN_NOT_FOUND)
+    if caller is not None and campaign.owner_id != caller.id:
+        raise HTTPException(status_code=403, detail=NOT_OWNER)
+
+    result = await session.exec(select(Proof).where(Proof.campaign_id == campaign.id))
+    proofs = result.all()
+    released = [p for p in proofs if p.type == ProofType.QUOTE and p.release_tx is not None]
+    receipts = [p for p in proofs if p.type == ProofType.RECEIPT]
+
+    flagged = []
+    blocked_vendors: set[int] = set()
+    for quote in released:
+        vendor_receipts = [r for r in receipts if r.vendor_id == quote.vendor_id]
+        if not vendor_receipts:
+            flagged.append(
+                {
+                    "proofId": quote.id,
+                    "vendorId": quote.vendor_id,
+                    "reason": f"집행액 {quote.amount} raw units에 대한 영수증 미제출",
+                }
+            )
+            blocked_vendors.add(quote.vendor_id)
+            continue
+
+        matched = next((r for r in vendor_receipts if r.amount == quote.amount), None)
+        if matched is None:
+            submitted = ", ".join(str(r.amount) for r in vendor_receipts)
+            flagged.append(
+                {
+                    "proofId": quote.id,
+                    "vendorId": quote.vendor_id,
+                    "reason": f"집행액 {quote.amount} ↔ 영수증 [{submitted}] 금액 불일치",
+                }
+            )
+            blocked_vendors.add(quote.vendor_id)
+        elif matched.status == ProofStatus.PENDING:
+            matched.status = ProofStatus.APPROVED
+            session.add(matched)
+
+    for vendor_id in blocked_vendors:
+        vendor = await session.get(Vendor, vendor_id)
+        if vendor is not None and vendor.allowlisted:
+            vendor.allowlisted = False
+            session.add(vendor)
+
+    passed = not flagged
+    session.add(
+        AgentDecision(
+            campaign_id=campaign.id,
+            role=AgentRole.VERIFY_AUDIT,
+            decision=AgentDecisionType.APPROVE if passed else AgentDecisionType.REJECT,
+            reasons=(
+                [f"집행 {len(released)}건 전수 감사 — 영수증 대조 이상 없음"]
+                if passed
+                else [item["reason"] for item in flagged]
+                + [f"벤더 {sorted(blocked_vendors)} allowlist 차단"]
+            ),
+            model="rule-based",
+        )
+    )
+    await session.commit()
+
+    return {"passed": passed, "flagged": flagged, "checkedCount": len(released)}
 
 
 @router.get("/{campaign_id}/decisions")
