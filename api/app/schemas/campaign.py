@@ -11,3 +11,8 @@ class CreateCampaignRequest(CamelModel):
     goal_amount: int = Field(gt=0)
     deadline: datetime
     policy: dict = Field(default_factory=dict)
+
+
+class UpdateCampaignRequest(CamelModel):
+    title: str | None = Field(default=None, min_length=1, max_length=100)
+    deadline: datetime | None = None

@@ -12,6 +12,7 @@ from app.models import (
     Proof,
     ProofStatus,
     Vendor,
+    utcnow,
 )
 
 NOT_ALLOWLISTED = "검증되지 않은 지출이거나 allowlist 벤더가 아닙니다."
@@ -25,6 +26,30 @@ ONCHAIN_STATUS = {
     "Refunding": CampaignStatus.REFUNDING,
     "Closed": CampaignStatus.CLOSED,
 }
+
+
+def overdue_status(campaign: Campaign) -> str:
+    if campaign.status != CampaignStatus.FUNDING or campaign.deadline > utcnow():
+        return campaign.status
+    if campaign.raised_amount >= campaign.goal_amount:
+        return CampaignStatus.EXECUTING
+    if campaign.contributor_count > 0:
+        return CampaignStatus.REFUNDING
+    return CampaignStatus.CLOSED
+
+
+async def lazy_close(session, campaign: Campaign) -> None:
+    if campaign.status != CampaignStatus.FUNDING or campaign.deadline > utcnow():
+        return
+
+    try:
+        result = await chain.post("/tx/close", {"campaignUuid": campaign.uuid})
+    except HTTPException:
+        return
+
+    campaign.status = ONCHAIN_STATUS.get(result["status"], campaign.status)
+    session.add(campaign)
+    await session.commit()
 
 
 def available_balance(campaign: Campaign) -> int:
