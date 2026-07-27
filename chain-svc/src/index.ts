@@ -11,6 +11,7 @@ import {
   newReference,
   paymentUrl,
 } from "./pay.js";
+import { campaignStatus, closeCampaign, release } from "./settlement.js";
 import {
   accountExists,
   agentAuthority,
@@ -131,7 +132,38 @@ app.get("/pay/reference/:ref", async (c) => {
   });
 });
 
-app.post("/tx/release", async (c) => c.json({ todo: "release" }, 501));
+const CloseBody = z.object({ campaignUuid: z.string().uuid() });
+
+app.post("/tx/close", async (c) => {
+  const { campaignUuid } = CloseBody.parse(await c.req.json());
+  const signature = await closeCampaign(campaignUuid);
+  return c.json({ signature, status: await campaignStatus(campaignUuid) });
+});
+
+const ReleaseBody = z.object({
+  idemKey: z.string().uuid(),
+  campaignUuid: z.string().uuid(),
+  vendorWallet: z.string(),
+  amount: z.coerce.bigint().positive(),
+});
+
+app.post("/tx/release", async (c) => {
+  const body = ReleaseBody.parse(await c.req.json());
+
+  const cached = idempotencyCache.get(body.idemKey);
+  if (cached) {
+    return c.json({ signature: cached, replayed: true });
+  }
+
+  const signature = await release(body.campaignUuid, body.vendorWallet, body.amount);
+  idempotencyCache.set(body.idemKey, signature);
+
+  return c.json({
+    signature,
+    replayed: false,
+    status: await campaignStatus(body.campaignUuid),
+  });
+});
 
 app.post("/tx/refund-batch", async (c) => c.json({ todo: "refund batch" }, 501));
 

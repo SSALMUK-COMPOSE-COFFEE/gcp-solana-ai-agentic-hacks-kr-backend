@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select
 
-from app.core import gemini
+from app.core import gemini, settlement
 from app.core.config import settings
 from app.core.deps import AgentCaller, SessionDep
 from app.models import (
@@ -96,7 +96,20 @@ async def evaluate_policy(
         "reasons": decision.reasons,
         "readFile": document is not None,
         "model": settings.gemini_model,
+        "execution": await _execute(session, campaign, vendor, proof) if approved else None,
     }
+
+
+async def _execute(
+    session: SessionDep, campaign: Campaign, vendor: Vendor | None, proof: Proof
+) -> dict:
+    try:
+        settlement.check_releasable(campaign, vendor, proof, proof.amount)
+    except HTTPException as skipped:
+        return {"executed": False, "reason": skipped.detail}
+
+    result = await settlement.release(session, campaign, vendor, proof, proof.amount)
+    return {"executed": True, **result}
 
 
 @router.get("/{campaign_id}/decisions")

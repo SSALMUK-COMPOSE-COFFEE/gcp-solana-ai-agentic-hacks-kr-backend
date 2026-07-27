@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, CheckConstraint, Column
+from sqlalchemy import JSON, CheckConstraint, Column, String
 from sqlmodel import Field, SQLModel
 
 from app.models.base import amount_column, dt_column, utcnow
@@ -41,5 +41,8 @@ class Proof(SQLModel, table=True):
     file_url: str | None = None
 
     status: str = Field(default=ProofStatus.PENDING, index=True)
+    release_tx: str | None = Field(
+        default=None, sa_column=Column(String(128), unique=True, nullable=True)
+    )
 
     created_at: datetime = Field(default_factory=utcnow, sa_column=dt_column(nullable=False))

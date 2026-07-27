@@ -9,7 +9,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.db import async_session, init_db
 from app.core.errors import register_error_handlers
-from app.routers import agent, auth, campaign, payment, users, vendor
+from app.routers import agent, auth, campaign, payment, settlement, users, vendor
 
 
 @asynccontextmanager
@@ -34,6 +34,7 @@ app.include_router(campaign.router)
 app.include_router(payment.router)
 app.include_router(users.router)
 app.include_router(vendor.router)
+app.include_router(settlement.router)
 app.include_router(agent.router)
 
 
