@@ -9,7 +9,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.db import async_session, init_db
 from app.core.errors import register_error_handlers
-from app.routers import auth, campaign, payment
+from app.routers import auth, campaign, payment, users
 
 
 @asynccontextmanager
@@ -32,6 +32,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(campaign.router)
 app.include_router(payment.router)
+app.include_router(users.router)
 
 
 async def _check_db() -> str:
