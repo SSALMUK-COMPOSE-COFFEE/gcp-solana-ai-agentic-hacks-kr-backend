@@ -4,8 +4,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+import base58
 import bcrypt
 import jwt
+from nacl.exceptions import BadSignatureError
+from nacl.signing import VerifyKey
 
 from app.core.config import settings
 
@@ -65,3 +68,31 @@ def decode_token(token: str, expected_type: str) -> dict[str, Any]:
 
 def token_expires_at(payload: dict[str, Any]) -> datetime:
     return datetime.fromtimestamp(payload["exp"], tz=timezone.utc)
+
+
+def is_valid_wallet(wallet_address: str) -> bool:
+    try:
+        return len(base58.b58decode(wallet_address)) == 32
+    except ValueError:
+        return False
+
+
+def create_wallet_nonce() -> str:
+    return f"chongdae-auth:{secrets.token_hex(16)}"
+
+
+def verify_wallet_signature(wallet_address: str, message: str, signature: str) -> bool:
+    try:
+        pubkey = base58.b58decode(wallet_address)
+        raw_signature = base58.b58decode(signature)
+    except ValueError:
+        return False
+
+    if len(pubkey) != 32 or len(raw_signature) != 64:
+        return False
+
+    try:
+        VerifyKey(pubkey).verify(message.encode(), raw_signature)
+    except BadSignatureError:
+        return False
+    return True

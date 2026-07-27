@@ -28,3 +28,13 @@ class RefreshRequest(CamelModel):
 
 class LogoutRequest(CamelModel):
     refresh_token: str
+
+
+class WalletNonceRequest(CamelModel):
+    wallet_address: str = Field(min_length=32, max_length=44)
+
+
+class WalletVerifyRequest(CamelModel):
+    wallet_address: str = Field(min_length=32, max_length=44)
+    signature: str = Field(min_length=64, max_length=128)
+    nonce: str = Field(min_length=1, max_length=128)
