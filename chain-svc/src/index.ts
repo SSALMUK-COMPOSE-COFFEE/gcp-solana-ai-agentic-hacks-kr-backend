@@ -4,7 +4,13 @@ import { PublicKey } from "@solana/web3.js";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { PORT, SOLANA_RPC_URL } from "./config.js";
+import { PAY_ICON, PAY_LABEL, PORT, SOLANA_RPC_URL } from "./config.js";
+import {
+  buildContributeTransaction,
+  findReferenceSignature,
+  newReference,
+  paymentUrl,
+} from "./pay.js";
 import {
   accountExists,
   agentAuthority,
@@ -89,23 +95,41 @@ app.post("/tx/campaign", async (c) => {
   }
 });
 
-app.get("/pay/tx", (c) =>
-  c.json({ label: "팬덤 총대 에이전트", icon: "https://hajin.xyz/icon.png" })
-);
-
-const PayTxBody = z.object({ account: z.string() });
-
-app.post("/pay/tx", async (c) => {
-  const ref = c.req.query("ref");
-  const { account } = PayTxBody.parse(await c.req.json());
-  return c.json({ todo: "contribute tx", ref, account }, 501);
+app.post("/pay/url", async (c) => {
+  const reference = newReference();
+  return c.json({ reference, url: paymentUrl(reference) }, 201);
 });
 
-app.post("/pay/url", async (c) => c.json({ todo: "solana-pay url" }, 501));
+app.get("/pay/tx", (c) => c.json({ label: PAY_LABEL, icon: PAY_ICON }));
 
-app.get("/pay/reference/:ref", async (c) =>
-  c.json({ todo: "poll reference", ref: c.req.param("ref") }, 501)
-);
+const PayTxBody = z.object({
+  account: z.string(),
+  campaignUuid: z.string().uuid(),
+  amount: z.coerce.bigint().positive(),
+  reference: z.string(),
+});
+
+app.post("/pay/tx", async (c) => {
+  const body = PayTxBody.parse(await c.req.json());
+  const transaction = await buildContributeTransaction(
+    body.campaignUuid,
+    body.amount,
+    body.reference,
+    body.account
+  );
+  const usdc = (Number(body.amount) / 1_000_000).toLocaleString("en-US");
+  return c.json({ transaction, message: `${PAY_LABEL} — ${usdc} USDC 기여` });
+});
+
+app.get("/pay/reference/:ref", async (c) => {
+  const reference = c.req.param("ref");
+  const txSignature = await findReferenceSignature(reference);
+  return c.json({
+    reference,
+    status: txSignature ? "confirmed" : "pending",
+    txSignature,
+  });
+});
 
 app.post("/tx/release", async (c) => c.json({ todo: "release" }, 501));
 

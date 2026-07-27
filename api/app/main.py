@@ -2,13 +2,14 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.db import async_session, init_db
 from app.core.errors import register_error_handlers
-from app.routers import auth, campaign
+from app.routers import auth, campaign, payment
 
 
 @asynccontextmanager
@@ -21,8 +22,16 @@ app = FastAPI(title="팬덤 총대 에이전트 API", version=settings.app_versi
 
 register_error_handlers(app)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(auth.router)
 app.include_router(campaign.router)
+app.include_router(payment.router)
 
 
 async def _check_db() -> str:

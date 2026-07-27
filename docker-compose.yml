@@ -37,6 +37,7 @@ services:
       SOLANA_RPC_URL: https://api.devnet.solana.com
       USDC_MINT: 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
       AGENT_AUTHORITY_KEYPAIR: /run/secrets/agent-authority.json
+      PUBLIC_BASE_URL: https://chongdae.hajin.xyz
     volumes:
       - ${HOME}/.keys/chongdae/agent-authority.json:/run/secrets/agent-authority.json:ro
 
