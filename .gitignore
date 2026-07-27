@@ -33,3 +33,4 @@ target/
 
 # Claude 로컬 설정
 .claude/
+.orca/

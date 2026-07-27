@@ -15,7 +15,7 @@ escrow = "5QzRtGsFnLRmmMPygmSf5HkLP4cKzNbyMBtM2zx4cS2n"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "localnet"
+cluster = "devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

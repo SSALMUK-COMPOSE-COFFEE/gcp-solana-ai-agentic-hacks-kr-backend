@@ -36,7 +36,9 @@ describe("escrow", () => {
   );
 
   before(async () => {
-    await provider.connection.requestAirdrop(fan.publicKey, 1_000_000_000);
+    try {
+      await provider.connection.requestAirdrop(fan.publicKey, 1_000_000_000);
+    } catch {}
 
     usdcMint = await createMint(
       provider.connection,
