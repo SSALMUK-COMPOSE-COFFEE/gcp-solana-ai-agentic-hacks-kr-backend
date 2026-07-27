@@ -11,4 +11,6 @@ export const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL ?? "https://chongdae.
 
 export const PAY_LABEL = process.env.PAY_LABEL ?? "팬덤 총대 에이전트";
 
+export const PAYSH_TREASURY = process.env.PAYSH_TREASURY ?? "";
+
 export const PAY_ICON = process.env.PAY_ICON ?? `${PUBLIC_BASE_URL}/static/icon.png`;

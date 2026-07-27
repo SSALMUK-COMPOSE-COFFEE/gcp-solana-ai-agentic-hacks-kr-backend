@@ -1,17 +1,18 @@
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select
 
-from app.core import chain
-from app.core.deps import CurrentUser, SessionDep
+from app.core import chain, paysh
+from app.core.deps import CurrentUser, ServiceToken, SessionDep
 from app.models import (
     Campaign,
     CampaignStatus,
     Contribution,
+    Micropay,
     PaymentRequest,
     PaymentStatus,
     utcnow,
 )
-from app.schemas.payment import PaymentQrRequest, SolanaPayTxRequest
+from app.schemas.payment import MicropayRequest, PaymentQrRequest, SolanaPayTxRequest
 
 router = APIRouter(prefix="/payment", tags=["payment"])
 
@@ -119,6 +120,34 @@ async def solana_pay_transaction(
     await session.commit()
 
     return {"transaction": built["transaction"], "message": built["message"]}
+
+
+@router.post("/paysh/micropay")
+async def paysh_micropay(body: MicropayRequest, _: ServiceToken, session: SessionDep) -> dict:
+    record = await paysh.micropay(session, body.resource, body.amount)
+    await session.commit()
+
+    return {"paid": True, "txSignature": record.tx_signature}
+
+
+@router.get("/paysh/usage")
+async def paysh_usage(_: CurrentUser, session: SessionDep) -> dict:
+    result = await session.exec(select(Micropay).order_by(Micropay.created_at.desc()))
+    rows = result.all()
+
+    return {
+        "totalSpent": sum(row.amount for row in rows if row.paid),
+        "items": [
+            {
+                "resource": row.resource,
+                "amount": row.amount,
+                "paid": row.paid,
+                "txSignature": row.tx_signature,
+                "at": row.created_at,
+            }
+            for row in rows
+        ],
+    }
 
 
 @router.get("/solana-pay/{ref}/status")

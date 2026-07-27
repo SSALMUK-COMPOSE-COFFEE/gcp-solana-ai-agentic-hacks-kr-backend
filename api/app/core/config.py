@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     nonce_ttl: int = 300
 
+    webhook_secret: str = ""
+    paysh_gemini_cost: int = 2000
+
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
 

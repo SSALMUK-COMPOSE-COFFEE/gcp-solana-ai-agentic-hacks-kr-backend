@@ -10,3 +10,14 @@ class PaymentQrRequest(CamelModel):
 
 class SolanaPayTxRequest(CamelModel):
     account: str
+
+
+class MicropayRequest(CamelModel):
+    resource: str = Field(min_length=1, max_length=100)
+    amount: int = Field(gt=0)
+
+
+class PayshWebhookPayload(CamelModel):
+    resource: str
+    paid: bool
+    tx_signature: str

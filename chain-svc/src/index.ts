@@ -11,6 +11,7 @@ import {
   newReference,
   paymentUrl,
 } from "./pay.js";
+import { micropay } from "./paysh.js";
 import { campaignStatus, closeCampaign, refundBatch, release } from "./settlement.js";
 import {
   accountExists,
@@ -170,6 +171,26 @@ const RefundBatchBody = z.object({ campaignUuid: z.string().uuid() });
 app.post("/tx/refund-batch", async (c) => {
   const body = RefundBatchBody.parse(await c.req.json());
   return c.json(await refundBatch(body.campaignUuid));
+});
+
+const MicropayBody = z.object({
+  idemKey: z.string().uuid(),
+  amount: z.coerce.bigint().positive(),
+});
+
+app.post("/tx/micropay", async (c) => {
+  const body = MicropayBody.parse(await c.req.json());
+
+  const cached = idempotencyCache.get(body.idemKey);
+  if (cached) {
+    return c.json({ paid: true, signature: cached, reason: null, replayed: true });
+  }
+
+  const result = await micropay(body.amount);
+  if (result.signature) {
+    idempotencyCache.set(body.idemKey, result.signature);
+  }
+  return c.json(result);
 });
 
 app.post("/nft/certificate", async (c) => c.json({ todo: "cnft mint" }, 501));

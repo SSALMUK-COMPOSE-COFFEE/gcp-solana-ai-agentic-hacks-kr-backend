@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select
 
-from app.core import gemini, settlement
+from app.core import gemini, paysh, settlement
 from app.core.config import settings
 from app.core.deps import AgentCaller, SessionDep
 from app.models import (
@@ -68,12 +68,20 @@ async def evaluate_policy(
             ],
             "첨부파일": bool(proof.file_url),
         },
-        escrow_balance=campaign.raised_amount - campaign.released_amount,
+        escrow_balance=settlement.available_balance(campaign),
     )
 
     document = await gemini.fetch_document(proof.file_url)
     decision = await gemini.evaluate_policy(prompt, document)
     approved = decision.decision == AgentDecisionType.APPROVE
+
+    try:
+        micropay = await paysh.micropay(
+            session, settings.gemini_model, settings.paysh_gemini_cost
+        )
+        micropay_result = {"paid": True, "txSignature": micropay.tx_signature}
+    except HTTPException as failed:
+        micropay_result = {"paid": False, "reason": failed.detail}
 
     proof.status = ProofStatus.APPROVED if approved else ProofStatus.REJECTED
     record = AgentDecision(
@@ -96,6 +104,7 @@ async def evaluate_policy(
         "reasons": decision.reasons,
         "readFile": document is not None,
         "model": settings.gemini_model,
+        "micropay": micropay_result,
         "execution": await _execute(session, campaign, vendor, proof) if approved else None,
     }
 
