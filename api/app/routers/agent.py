@@ -3,12 +3,13 @@ from sqlmodel import select
 
 from app.core import gemini, paysh, settlement
 from app.core.config import settings
-from app.core.deps import AgentCaller, SessionDep
+from app.core.deps import AgentCaller, CurrentUser, SessionDep
 from app.models import (
     AgentDecision,
     AgentDecisionType,
     AgentRole,
     Campaign,
+    CampaignStatus,
     Proof,
     ProofStatus,
     RewardTier,
@@ -136,6 +137,82 @@ async def _execute(
 
     result = await settlement.release(session, campaign, vendor, proof, proof.amount)
     return {"executed": True, **result}
+
+
+STATES_BY_STATUS = {
+    CampaignStatus.FUNDING: {
+        AgentRole.ORCHESTRATOR: "running",
+        AgentRole.VENDOR_NEGOTIATION: "running",
+        AgentRole.VERIFY_AUDIT: "idle",
+        AgentRole.SETTLEMENT_REFUND: "waiting",
+    },
+    CampaignStatus.EXECUTING: {
+        AgentRole.ORCHESTRATOR: "running",
+        AgentRole.VENDOR_NEGOTIATION: "idle",
+        AgentRole.VERIFY_AUDIT: "running",
+        AgentRole.SETTLEMENT_REFUND: "running",
+    },
+    CampaignStatus.REFUNDING: {
+        AgentRole.ORCHESTRATOR: "running",
+        AgentRole.VENDOR_NEGOTIATION: "idle",
+        AgentRole.VERIFY_AUDIT: "idle",
+        AgentRole.SETTLEMENT_REFUND: "running",
+    },
+    CampaignStatus.CLOSED: {role: "idle" for role in AgentRole.ALL},
+}
+
+STATE_RANK = {"idle": 0, "waiting": 1, "running": 2}
+
+
+@router.get("/status")
+async def agent_status(
+    user: CurrentUser, session: SessionDep, campaignId: int | None = None
+) -> dict:
+    if campaignId is not None:
+        campaign = await session.get(Campaign, campaignId)
+        if campaign is None:
+            raise HTTPException(status_code=404, detail=CAMPAIGN_NOT_FOUND)
+        states = STATES_BY_STATUS[settlement.overdue_status(campaign)]
+        campaign_ids = [campaign.id]
+    else:
+        result = await session.exec(select(Campaign).where(Campaign.owner_id == user.id))
+        campaigns = result.all()
+        states = {role: "idle" for role in AgentRole.ALL}
+        for campaign in campaigns:
+            for role, state in STATES_BY_STATUS[settlement.overdue_status(campaign)].items():
+                if STATE_RANK[state] > STATE_RANK[states[role]]:
+                    states[role] = state
+        campaign_ids = [c.id for c in campaigns]
+
+    last_by_role: dict[str, AgentDecision] = {}
+    if campaign_ids:
+        result = await session.exec(
+            select(AgentDecision)
+            .where(AgentDecision.campaign_id.in_(campaign_ids))
+            .order_by(AgentDecision.created_at.desc())
+            .limit(50)
+        )
+        for decision in result.all():
+            last_by_role.setdefault(decision.role, decision)
+
+    return {
+        "agents": [
+            {
+                "role": role,
+                "state": states[role],
+                "lastDecision": (
+                    {
+                        "decision": last_by_role[role].decision,
+                        "reason": last_by_role[role].reasons[0] if last_by_role[role].reasons else None,
+                        "at": last_by_role[role].created_at,
+                    }
+                    if role in last_by_role
+                    else None
+                ),
+            }
+            for role in AgentRole.ALL
+        ]
+    }
 
 
 @router.post("/audit")

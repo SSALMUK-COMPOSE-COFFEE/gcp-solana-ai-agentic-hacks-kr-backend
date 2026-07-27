@@ -13,7 +13,12 @@ from app.models import (
     RewardTier,
     utcnow,
 )
-from app.schemas.payment import MicropayRequest, PaymentQrRequest, SolanaPayTxRequest
+from app.schemas.payment import (
+    ContributeRequest,
+    MicropayRequest,
+    PaymentQrRequest,
+    SolanaPayTxRequest,
+)
 
 router = APIRouter(prefix="/payment", tags=["payment"])
 
@@ -23,6 +28,8 @@ REFERENCE_NOT_FOUND = "존재하지 않는 결제 요청입니다."
 TIER_NOT_FOUND = "존재하지 않는 티어입니다."
 TIER_SOLD_OUT = "품절된 티어입니다."
 AMOUNT_REQUIRED = "금액 또는 티어를 지정해야 합니다."
+TX_VERIFY_FAILED = "트랜잭션 검증에 실패했습니다."
+ALREADY_PROCESSED = "이미 처리된 트랜잭션입니다."
 
 
 async def _open_campaign(session: SessionDep, campaign_id: int) -> Campaign:
@@ -171,6 +178,29 @@ async def paysh_usage(_: CurrentUser, session: SessionDep) -> dict:
             for row in rows
         ],
     }
+
+
+@router.post("/contribute", status_code=201)
+async def contribute(body: ContributeRequest, _: CurrentUser, session: SessionDep) -> dict:
+    payment = await _payment_by_reference(session, body.reference)
+
+    if payment.status == PaymentStatus.CONFIRMED:
+        raise HTTPException(status_code=409, detail=ALREADY_PROCESSED)
+    if not payment.contributor_wallet:
+        raise HTTPException(status_code=400, detail=TX_VERIFY_FAILED)
+
+    result = await chain.get(f"/pay/reference/{body.reference}")
+    if result["status"] != "confirmed" or result["txSignature"] != body.tx_signature:
+        raise HTTPException(status_code=400, detail=TX_VERIFY_FAILED)
+
+    await _confirm(session, payment, body.tx_signature)
+
+    contribution = await session.exec(
+        select(Contribution).where(Contribution.reference == body.reference)
+    )
+    record = contribution.first()
+
+    return {"contributionId": record.id, "amount": payment.amount}
 
 
 @router.get("/solana-pay/{ref}/status")
