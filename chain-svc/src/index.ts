@@ -1,17 +1,43 @@
 import { serve } from "@hono/node-server";
+import anchor from "@coral-xyz/anchor";
+import { PublicKey } from "@solana/web3.js";
 import { Hono } from "hono";
 import { z } from "zod";
 
-const app = new Hono();
+import { PORT, SOLANA_RPC_URL } from "./config.js";
+import {
+  accountExists,
+  agentAuthority,
+  campaignPdaFor,
+  escrowAtaFor,
+  program,
+  usdcMint,
+  uuidToBytes,
+} from "./solana.js";
 
-const PORT = Number(process.env.PORT ?? 8081);
-const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
-const USDC_MINT = process.env.USDC_MINT ?? "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+const { BN } = anchor;
+
+const app = new Hono();
 
 const idempotencyCache = new Map<string, string>();
 
-app.get("/health", (c) => c.json({ status: "ok", rpc: SOLANA_RPC_URL }));
+app.onError((err, c) => {
+  if (err instanceof z.ZodError) {
+    return c.json({ message: "유효하지 않은 입력값입니다." }, 400);
+  }
+  console.error(err);
+  return c.json({ message: err.message }, 500);
+});
 
+app.get("/health", (c) =>
+  c.json({
+    status: "ok",
+    rpc: SOLANA_RPC_URL,
+    programId: program.programId.toBase58(),
+    agentAuthority: agentAuthority.publicKey.toBase58(),
+    usdcMint: usdcMint.toBase58(),
+  })
+);
 
 const CreateCampaignBody = z.object({
   idemKey: z.string().uuid(),
@@ -22,7 +48,45 @@ const CreateCampaignBody = z.object({
 
 app.post("/tx/campaign", async (c) => {
   const body = CreateCampaignBody.parse(await c.req.json());
-  return c.json({ todo: "create_campaign", idemKey: body.idemKey }, 501);
+
+  const uuidBytes = uuidToBytes(body.idemKey);
+  const campaignPda = campaignPdaFor(uuidBytes);
+  const escrowPda = escrowAtaFor(campaignPda);
+  const addresses = {
+    campaignPda: campaignPda.toBase58(),
+    escrowPda: escrowPda.toBase58(),
+  };
+
+  if (await accountExists(campaignPda)) {
+    return c.json({
+      ...addresses,
+      signature: idempotencyCache.get(body.idemKey) ?? null,
+      created: false,
+    });
+  }
+
+  try {
+    const signature = await program.methods
+      .createCampaign(uuidBytes, new BN(body.goalAmount.toString()), new BN(body.deadline))
+      .accounts({
+        authority: new PublicKey(body.authority),
+        agentAuthority: agentAuthority.publicKey,
+        usdcMint,
+      })
+      .rpc();
+
+    idempotencyCache.set(body.idemKey, signature);
+    return c.json({ ...addresses, signature, created: true }, 201);
+  } catch (err) {
+    if (await accountExists(campaignPda)) {
+      return c.json({
+        ...addresses,
+        signature: idempotencyCache.get(body.idemKey) ?? null,
+        created: false,
+      });
+    }
+    throw err;
+  }
 });
 
 app.get("/pay/tx", (c) =>
@@ -50,5 +114,7 @@ app.post("/tx/refund-batch", async (c) => c.json({ todo: "refund batch" }, 501))
 app.post("/nft/certificate", async (c) => c.json({ todo: "cnft mint" }, 501));
 
 serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.log(`chain-svc listening on :${info.port} (rpc: ${SOLANA_RPC_URL}, usdc: ${USDC_MINT})`);
+  console.log(
+    `chain-svc listening on :${info.port} (rpc: ${SOLANA_RPC_URL}, agent: ${agentAuthority.publicKey.toBase58()})`
+  );
 });

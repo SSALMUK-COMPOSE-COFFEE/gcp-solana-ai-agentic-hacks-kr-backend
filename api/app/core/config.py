@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     chain_svc_url: str = "http://localhost:8081"
     chain_enabled: bool = False
+    chain_svc_timeout: float = 60.0
 
     jwt_secret: str = "dev-secret-change-me"
     jwt_algorithm: str = "HS256"
