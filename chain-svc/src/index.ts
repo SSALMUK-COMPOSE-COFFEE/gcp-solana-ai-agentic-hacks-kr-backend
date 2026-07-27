@@ -11,7 +11,7 @@ import {
   newReference,
   paymentUrl,
 } from "./pay.js";
-import { campaignStatus, closeCampaign, release } from "./settlement.js";
+import { campaignStatus, closeCampaign, refundBatch, release } from "./settlement.js";
 import {
   accountExists,
   agentAuthority,
@@ -165,7 +165,12 @@ app.post("/tx/release", async (c) => {
   });
 });
 
-app.post("/tx/refund-batch", async (c) => c.json({ todo: "refund batch" }, 501));
+const RefundBatchBody = z.object({ campaignUuid: z.string().uuid() });
+
+app.post("/tx/refund-batch", async (c) => {
+  const body = RefundBatchBody.parse(await c.req.json());
+  return c.json(await refundBatch(body.campaignUuid));
+});
 
 app.post("/nft/certificate", async (c) => c.json({ todo: "cnft mint" }, 501));
 

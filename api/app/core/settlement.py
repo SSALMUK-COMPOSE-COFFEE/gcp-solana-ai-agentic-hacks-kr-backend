@@ -53,7 +53,7 @@ async def lazy_close(session, campaign: Campaign) -> None:
 
 
 def available_balance(campaign: Campaign) -> int:
-    return campaign.raised_amount - campaign.released_amount
+    return campaign.raised_amount - campaign.released_amount - campaign.refunded_amount
 
 
 def check_releasable(campaign: Campaign, vendor: Vendor | None, proof: Proof, amount: int) -> None:

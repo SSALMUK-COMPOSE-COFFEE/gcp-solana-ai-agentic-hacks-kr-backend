@@ -23,10 +23,11 @@ export const agentAuthority = loadKeypair(AGENT_AUTHORITY_KEYPAIR);
 
 export const usdcMint = new PublicKey(USDC_MINT);
 
-export const program = new Program<Escrow>(
-  idl,
-  new AnchorProvider(connection, new Wallet(agentAuthority), { commitment: "confirmed" })
-);
+export const provider = new AnchorProvider(connection, new Wallet(agentAuthority), {
+  commitment: "confirmed",
+});
+
+export const program = new Program<Escrow>(idl, provider);
 
 export function uuidToBytes(uuid: string): number[] {
   return Array.from(Buffer.from(uuid.replace(/-/g, ""), "hex"));
