@@ -19,6 +19,7 @@ NOT_ALLOWLISTED = "검증되지 않은 지출이거나 allowlist 벤더가 아�
 ALREADY_RELEASED = "이미 지급된 증빙입니다."
 NOT_EXECUTING = "집행 가능한 상태의 캠페인이 아닙니다."
 INSUFFICIENT = "에스크로 잔액이 부족합니다."
+SELF_DEALING = "총대 지갑과 동일한 벤더에게는 집행할 수 없습니다."
 
 ONCHAIN_STATUS = {
     "Funding": CampaignStatus.FUNDING,
@@ -56,9 +57,15 @@ def available_balance(campaign: Campaign) -> int:
     return campaign.raised_amount - campaign.released_amount - campaign.refunded_amount
 
 
+def is_self_dealing(campaign: Campaign, vendor: Vendor) -> bool:
+    return vendor.wallet_address == campaign.authority_wallet
+
+
 def check_releasable(campaign: Campaign, vendor: Vendor | None, proof: Proof, amount: int) -> None:
     if vendor is None or not vendor.allowlisted or proof.status != ProofStatus.APPROVED:
         raise HTTPException(status_code=403, detail=NOT_ALLOWLISTED)
+    if is_self_dealing(campaign, vendor):
+        raise HTTPException(status_code=403, detail=SELF_DEALING)
     if proof.release_tx is not None:
         raise HTTPException(status_code=409, detail=ALREADY_RELEASED)
     if campaign.status != CampaignStatus.EXECUTING:

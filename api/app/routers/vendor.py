@@ -2,8 +2,8 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
-from app.core import security
-from app.core.deps import CurrentUser, CurrentVendor, SessionDep
+from app.core import security, settlement
+from app.core.deps import CurrentVendor, ServiceToken, SessionDep
 from app.models import Campaign, CampaignStatus, Proof, ProofStatus, ProofType, Vendor
 from app.schemas.vendor import RegisterVendorRequest, SubmitQuoteRequest
 
@@ -72,7 +72,7 @@ async def read_vendor(vendor_id: int, session: SessionDep) -> dict:
 
 
 @router.post("/{vendor_id}/allowlist")
-async def add_to_allowlist(vendor_id: int, user: CurrentUser, session: SessionDep) -> dict:
+async def add_to_allowlist(vendor_id: int, _: ServiceToken, session: SessionDep) -> dict:
     vendor = await _get_vendor(session, vendor_id)
     vendor.allowlisted = True
     session.add(vendor)
@@ -81,7 +81,7 @@ async def add_to_allowlist(vendor_id: int, user: CurrentUser, session: SessionDe
 
 
 @router.delete("/{vendor_id}/allowlist")
-async def remove_from_allowlist(vendor_id: int, user: CurrentUser, session: SessionDep) -> dict:
+async def remove_from_allowlist(vendor_id: int, _: ServiceToken, session: SessionDep) -> dict:
     vendor = await _get_vendor(session, vendor_id)
     vendor.allowlisted = False
     session.add(vendor)
@@ -103,6 +103,8 @@ async def submit_quote(
         raise HTTPException(status_code=404, detail=CAMPAIGN_NOT_FOUND)
     if campaign.status == CampaignStatus.CLOSED:
         raise HTTPException(status_code=409, detail=CAMPAIGN_CLOSED)
+    if settlement.is_self_dealing(campaign, vendor):
+        raise HTTPException(status_code=403, detail=settlement.SELF_DEALING)
 
     proof = Proof(
         campaign_id=campaign.id,

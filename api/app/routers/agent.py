@@ -65,6 +65,7 @@ async def evaluate_policy(
             "마감": campaign.deadline.isoformat(),
             "상태": campaign.status,
             "정책": campaign.policy,
+            "총대_지갑": campaign.authority_wallet,
         },
         vendor={
             "이름": vendor.name if vendor else None,
