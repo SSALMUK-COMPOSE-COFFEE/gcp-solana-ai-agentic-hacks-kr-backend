@@ -20,7 +20,12 @@ async def _request(method: str, path: str, payload: dict | None = None) -> dict:
         raise HTTPException(status_code=502, detail=UNAVAILABLE) from None
 
     if response.status_code >= 400:
-        raise HTTPException(status_code=502, detail=UNAVAILABLE)
+        try:
+            message = response.json().get("message")
+        except ValueError:
+            message = None
+        detail = f"{UNAVAILABLE} ({message})" if message else UNAVAILABLE
+        raise HTTPException(status_code=502, detail=detail)
 
     return response.json()
 

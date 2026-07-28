@@ -164,11 +164,10 @@ async def _execute(
     session: SessionDep, campaign: Campaign, vendor: Vendor | None, proof: Proof
 ) -> dict:
     try:
-        settlement.check_releasable(campaign, vendor, proof, proof.amount)
-    except HTTPException as skipped:
-        return {"executed": False, "reason": skipped.detail}
+        result = await settlement.release(session, campaign, vendor, proof, proof.amount)
+    except HTTPException as failed:
+        return {"executed": False, "reason": failed.detail}
 
-    result = await settlement.release(session, campaign, vendor, proof, proof.amount)
     return {"executed": True, **result}
 
 
