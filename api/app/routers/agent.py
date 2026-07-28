@@ -23,6 +23,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 CAMPAIGN_NOT_FOUND = "존재하지 않는 캠페인입니다."
 PROOF_NOT_FOUND = "존재하지 않는 증빙입니다."
 NOT_OWNER = "해당 캠페인의 총대만 요청할 수 있습니다."
+NOT_QUOTE = "영수증 증빙은 정책 심사 대상이 아닙니다. 사후 감사(/agent/audit)로 검증됩니다."
 
 
 @router.post("/policy/evaluate")
@@ -38,6 +39,8 @@ async def evaluate_policy(
     proof = await session.get(Proof, body.proof_id)
     if proof is None or proof.campaign_id != campaign.id:
         raise HTTPException(status_code=404, detail=PROOF_NOT_FOUND)
+    if proof.type != ProofType.QUOTE:
+        raise HTTPException(status_code=409, detail=NOT_QUOTE)
 
     vendor = await session.get(Vendor, proof.vendor_id) if proof.vendor_id else None
 

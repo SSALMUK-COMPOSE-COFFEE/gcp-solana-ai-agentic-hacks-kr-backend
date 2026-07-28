@@ -11,11 +11,13 @@ from app.models import (
     CampaignStatus,
     Proof,
     ProofStatus,
+    ProofType,
     Vendor,
     utcnow,
 )
 
 NOT_ALLOWLISTED = "검증되지 않은 지출이거나 allowlist 벤더가 아닙니다."
+NOT_QUOTE = "견적 증빙만 집행할 수 있습니다."
 ALREADY_RELEASED = "이미 지급된 증빙입니다."
 NOT_EXECUTING = "집행 가능한 상태의 캠페인이 아닙니다."
 INSUFFICIENT = "에스크로 잔액이 부족합니다."
@@ -62,6 +64,8 @@ def is_self_dealing(campaign: Campaign, vendor: Vendor) -> bool:
 
 
 def check_releasable(campaign: Campaign, vendor: Vendor | None, proof: Proof, amount: int) -> None:
+    if proof.type != ProofType.QUOTE:
+        raise HTTPException(status_code=409, detail=NOT_QUOTE)
     if vendor is None or not vendor.allowlisted or proof.status != ProofStatus.APPROVED:
         raise HTTPException(status_code=403, detail=NOT_ALLOWLISTED)
     if is_self_dealing(campaign, vendor):
