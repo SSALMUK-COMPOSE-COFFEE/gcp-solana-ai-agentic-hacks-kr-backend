@@ -9,6 +9,11 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     root_path: str = ""
 
+    storage_backend: str = "local"
+    storage_dir: str = "/data/uploads"
+    storage_public_base_url: str = "https://chongdae.hajin.xyz/api/static"
+    storage_max_bytes: int = 12 * 1024 * 1024
+
     database_url: str
 
     chain_svc_url: str = "http://localhost:8081"

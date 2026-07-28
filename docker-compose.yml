@@ -21,6 +21,8 @@ services:
       - "8090:8080"
     env_file:
       - .env
+    volumes:
+      - uploads:/data/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -39,3 +41,4 @@ services:
 
 volumes:
   dbdata:
+  uploads:

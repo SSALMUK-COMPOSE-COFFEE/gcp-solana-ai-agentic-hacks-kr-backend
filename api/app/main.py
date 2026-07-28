@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
@@ -9,7 +10,18 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.db import async_session, init_db
 from app.core.errors import register_error_handlers
-from app.routers import agent, auth, campaign, payment, proof, settlement, users, vendor, webhook
+from app.routers import (
+    agent,
+    auth,
+    campaign,
+    files,
+    payment,
+    proof,
+    settlement,
+    users,
+    vendor,
+    webhook,
+)
 
 
 @asynccontextmanager
@@ -27,6 +39,9 @@ app = FastAPI(
 
 register_error_handlers(app)
 
+if settings.storage_backend == "local":
+    Path(settings.storage_dir).mkdir(parents=True, exist_ok=True)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -43,6 +58,7 @@ app.include_router(proof.router)
 app.include_router(settlement.router)
 app.include_router(agent.router)
 app.include_router(webhook.router)
+app.include_router(files.router)
 
 
 async def _check_db() -> str:

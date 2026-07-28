@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from app.core import storage
 from app.core.deps import CurrentVendor, SessionDep
 from app.models import Campaign, Proof, ProofType, Vendor
 from app.schemas.proof import SubmitReceiptRequest
@@ -9,6 +10,15 @@ router = APIRouter(prefix="/proof", tags=["proof"])
 CAMPAIGN_NOT_FOUND = "존재하지 않는 캠페인입니다."
 PROOF_NOT_FOUND = "존재하지 않는 증빙입니다."
 NOT_ALLOWLISTED = "allowlist에 등재되지 않은 벤더입니다."
+
+
+@router.post("/upload", status_code=201)
+async def upload_document(vendor: CurrentVendor, file: UploadFile = File(...)) -> dict:
+    if not vendor.allowlisted:
+        raise HTTPException(status_code=403, detail=NOT_ALLOWLISTED)
+
+    content = await file.read()
+    return {"fileUrl": storage.save(content, file.content_type or "")}
 
 
 @router.post("/receipt", status_code=201)
