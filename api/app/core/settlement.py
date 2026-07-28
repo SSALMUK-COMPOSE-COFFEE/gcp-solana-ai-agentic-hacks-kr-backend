@@ -2,7 +2,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
 
-from app.core import chain
+from app.core import chain, policy
 from app.models import (
     AgentDecision,
     AgentDecisionType,
@@ -82,6 +82,10 @@ async def release(
     session, campaign: Campaign, vendor: Vendor, proof: Proof, amount: int
 ) -> dict:
     check_releasable(campaign, vendor, proof, amount)
+
+    found = await policy.violations(session, campaign, vendor, proof, amount)
+    if found:
+        raise HTTPException(status_code=403, detail=" ".join(found))
 
     result = await chain.post(
         "/tx/release",

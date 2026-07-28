@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select
 
-from app.core import gemini, paysh, settlement
+from app.core import gemini, paysh, policy, settlement
 from app.core.config import settings
 from app.core.deps import AgentCaller, CurrentUser, SessionDep
 from app.models import (
@@ -43,6 +43,35 @@ async def evaluate_policy(
         raise HTTPException(status_code=409, detail=NOT_QUOTE)
 
     vendor = await session.get(Vendor, proof.vendor_id) if proof.vendor_id else None
+
+    if vendor is not None:
+        found = await policy.violations(session, campaign, vendor, proof, proof.amount)
+        if found:
+            proof.status = ProofStatus.REJECTED
+            session.add_all(
+                [
+                    proof,
+                    AgentDecision(
+                        campaign_id=campaign.id,
+                        proof_id=proof.id,
+                        role=AgentRole.ORCHESTRATOR,
+                        decision=AgentDecisionType.REJECT,
+                        required_amount=0,
+                        reasons=found,
+                        model=policy.RULE_MODEL,
+                    ),
+                ]
+            )
+            await session.commit()
+            return {
+                "decision": AgentDecisionType.REJECT,
+                "requiredAmount": 0,
+                "reasons": found,
+                "readFile": False,
+                "model": policy.RULE_MODEL,
+                "micropay": {"paid": False, "reason": "정책 위반 룰 거절 — AI 심사 미호출"},
+                "execution": None,
+            }
 
     tier_rows = await session.exec(
         select(RewardTier).where(RewardTier.campaign_id == campaign.id)

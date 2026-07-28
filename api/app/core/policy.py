@@ -1,0 +1,69 @@
+from sqlalchemy import func
+from sqlmodel import select
+
+from app.models import Campaign, Proof, ProofType, Vendor
+
+RULE_MODEL = "rule-based"
+
+
+def _scaled(limit: int, campaign: Campaign) -> int:
+    if not campaign.policy.get("allowSurplusScaling"):
+        return limit
+    if campaign.goal_amount <= 0 or campaign.raised_amount <= campaign.goal_amount:
+        return limit
+    return limit * campaign.raised_amount // campaign.goal_amount
+
+
+async def _released_in_category(session, campaign: Campaign, category: str) -> int:
+    result = await session.exec(
+        select(func.coalesce(func.sum(Proof.amount), 0))
+        .join(Vendor, Vendor.id == Proof.vendor_id)
+        .where(
+            Proof.campaign_id == campaign.id,
+            Proof.type == ProofType.QUOTE,
+            Proof.release_tx.is_not(None),
+            Vendor.category == category,
+        )
+    )
+    return int(result.one())
+
+
+async def violations(
+    session, campaign: Campaign, vendor: Vendor, proof: Proof, amount: int
+) -> list[str]:
+    policy = campaign.policy or {}
+    categories = policy.get("categories") or {}
+    found: list[str] = []
+
+    if (
+        categories
+        and vendor.category != campaign.category
+        and vendor.category not in categories
+    ):
+        return [f"벤더 카테고리 '{vendor.category}'는 캠페인 정책에 없는 카테고리입니다."]
+
+    limits = categories.get(vendor.category) or {}
+
+    max_unit_price = limits.get("maxUnitPrice")
+    if isinstance(max_unit_price, int):
+        cap = _scaled(max_unit_price, campaign)
+        for item in proof.items:
+            unit_price = item.get("unit_price", 0)
+            if unit_price > cap:
+                found.append(
+                    f"'{item.get('name')}' 단가 {unit_price}가 상한 {cap}를 초과합니다."
+                )
+
+    max_total = limits.get("maxTotal")
+    if not isinstance(max_total, int):
+        max_total = policy.get("maxPerCategory")
+    if isinstance(max_total, int):
+        cap = _scaled(max_total, campaign)
+        cumulative = await _released_in_category(session, campaign, vendor.category)
+        if cumulative + amount > cap:
+            found.append(
+                f"카테고리 '{vendor.category}' 누적 집행 {cumulative + amount}가 "
+                f"총액 상한 {cap}를 초과합니다."
+            )
+
+    return found
