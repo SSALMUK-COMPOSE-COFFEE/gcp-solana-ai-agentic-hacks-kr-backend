@@ -18,7 +18,12 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="팬덤 총대 에이전트 API", version=settings.app_version, lifespan=lifespan)
+app = FastAPI(
+    title="팬덤 총대 에이전트 API",
+    version=settings.app_version,
+    lifespan=lifespan,
+    root_path=settings.root_path,
+)
 
 register_error_handlers(app)
 

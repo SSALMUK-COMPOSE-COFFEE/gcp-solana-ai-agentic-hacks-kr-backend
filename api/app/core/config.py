@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=("../.env", ".env"), extra="ignore")
 
     app_version: str = "0.1.0"
+    root_path: str = ""
 
     database_url: str
 
