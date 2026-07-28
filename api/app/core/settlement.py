@@ -1,4 +1,4 @@
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
 
@@ -86,7 +86,7 @@ async def release(
     result = await chain.post(
         "/tx/release",
         {
-            "idemKey": str(uuid4()),
+            "idemKey": str(uuid5(NAMESPACE_URL, f"release:{campaign.uuid}:{proof.id}:{amount}")),
             "campaignUuid": campaign.uuid,
             "vendorWallet": vendor.wallet_address,
             "amount": str(amount),

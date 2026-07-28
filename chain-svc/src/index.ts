@@ -153,7 +153,11 @@ app.post("/tx/release", async (c) => {
 
   const cached = idempotencyCache.get(body.idemKey);
   if (cached) {
-    return c.json({ signature: cached, replayed: true });
+    return c.json({
+      signature: cached,
+      replayed: true,
+      status: await campaignStatus(body.campaignUuid),
+    });
   }
 
   const signature = await release(body.campaignUuid, body.vendorWallet, body.amount);
