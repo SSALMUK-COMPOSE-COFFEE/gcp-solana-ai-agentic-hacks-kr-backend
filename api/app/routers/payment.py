@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import update
 from sqlmodel import select
 
 from app.core import chain, paysh
@@ -51,8 +52,19 @@ async def _payment_by_reference(session: SessionDep, reference: str) -> PaymentR
     return payment
 
 
-async def _confirm(session: SessionDep, payment: PaymentRequest, signature: str) -> None:
-    campaign = await session.get(Campaign, payment.campaign_id)
+async def _confirm(session: SessionDep, payment: PaymentRequest, signature: str) -> bool:
+    claimed = await session.execute(
+        update(PaymentRequest)
+        .where(
+            PaymentRequest.id == payment.id,
+            PaymentRequest.status == PaymentStatus.PENDING,
+        )
+        .values(status=PaymentStatus.CONFIRMED, tx_signature=signature)
+    )
+    if claimed.rowcount == 0:
+        await session.rollback()
+        await session.refresh(payment)
+        return False
 
     result = await session.exec(
         select(Contribution).where(
@@ -74,21 +86,25 @@ async def _confirm(session: SessionDep, payment: PaymentRequest, signature: str)
         )
     )
 
-    campaign.raised_amount += payment.amount
-    if first_contribution:
-        campaign.contributor_count += 1
+    await session.execute(
+        update(Campaign)
+        .where(Campaign.id == payment.campaign_id)
+        .values(
+            raised_amount=Campaign.raised_amount + payment.amount,
+            contributor_count=Campaign.contributor_count + (1 if first_contribution else 0),
+        )
+    )
 
     if payment.tier_id is not None:
-        tier = await session.get(RewardTier, payment.tier_id)
-        if tier is not None:
-            tier.sold_count += 1
-            session.add(tier)
+        await session.execute(
+            update(RewardTier)
+            .where(RewardTier.id == payment.tier_id)
+            .values(sold_count=RewardTier.sold_count + 1)
+        )
 
-    payment.status = PaymentStatus.CONFIRMED
-    payment.tx_signature = signature
-
-    session.add_all([campaign, payment])
     await session.commit()
+    await session.refresh(payment)
+    return True
 
 
 @router.post("/solana-pay/qr", status_code=201)
@@ -193,7 +209,8 @@ async def contribute(body: ContributeRequest, _: CurrentUser, session: SessionDe
     if result["status"] != "confirmed" or result["txSignature"] != body.tx_signature:
         raise HTTPException(status_code=400, detail=TX_VERIFY_FAILED)
 
-    await _confirm(session, payment, body.tx_signature)
+    if not await _confirm(session, payment, body.tx_signature):
+        raise HTTPException(status_code=409, detail=ALREADY_PROCESSED)
 
     contribution = await session.exec(
         select(Contribution).where(Contribution.reference == body.reference)
