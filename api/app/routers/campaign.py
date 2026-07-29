@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import func
 from sqlmodel import select
 
 from app.core import chain, settlement
@@ -34,6 +35,9 @@ NOT_EDITABLE = "수정 권한이 없습니다."
 ALREADY_FUNDED = "이미 모금이 시작된 캠페인입니다."
 DEADLINE_EXTEND = "마감일은 앞당기는 것만 가능합니다."
 
+MAX_ACTIVE_CAMPAIGNS = 10
+TOO_MANY_CAMPAIGNS = f"진행 중인 캠페인은 최대 {MAX_ACTIVE_CAMPAIGNS}개까지 만들 수 있습니다."
+
 
 def _to_utc(value: datetime) -> datetime:
     return (
@@ -64,6 +68,14 @@ async def create_campaign(
     deadline = _to_utc(body.deadline)
     if deadline <= utcnow():
         raise HTTPException(status_code=400, detail=DEADLINE_PASSED)
+
+    active = await session.exec(
+        select(func.count())
+        .select_from(Campaign)
+        .where(Campaign.owner_id == user.id, Campaign.status != CampaignStatus.CLOSED)
+    )
+    if active.one() >= MAX_ACTIVE_CAMPAIGNS:
+        raise HTTPException(status_code=409, detail=TOO_MANY_CAMPAIGNS)
 
     campaign_uuid = str(uuid4())
     onchain = await chain.post(
