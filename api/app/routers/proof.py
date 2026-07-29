@@ -1,6 +1,6 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from app.core import storage
+from app.core import policy, storage
 from app.core.deps import CurrentVendor, SessionDep
 from app.models import Campaign, Proof, ProofType, Vendor
 from app.schemas.proof import SubmitReceiptRequest
@@ -29,6 +29,9 @@ async def submit_receipt(
         raise HTTPException(status_code=403, detail=NOT_ALLOWLISTED)
     storage.validate_file_url(body.file_url)
 
+    items = [item.model_dump() for item in body.items]
+    policy.check_declared_total(items, body.total_amount)
+
     campaign = await session.get(Campaign, body.campaign_id)
     if campaign is None:
         raise HTTPException(status_code=404, detail=CAMPAIGN_NOT_FOUND)
@@ -38,7 +41,7 @@ async def submit_receipt(
         vendor_id=vendor.id,
         type=ProofType.RECEIPT,
         amount=body.total_amount,
-        items=[item.model_dump() for item in body.items],
+        items=items,
         file_url=body.file_url,
     )
     session.add(proof)

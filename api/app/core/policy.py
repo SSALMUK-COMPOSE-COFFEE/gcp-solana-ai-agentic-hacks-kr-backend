@@ -1,9 +1,23 @@
+from fastapi import HTTPException
 from sqlalchemy import func
 from sqlmodel import select
 
 from app.models import Campaign, Proof, ProofType, Vendor
 
 RULE_MODEL = "rule-based"
+
+
+def items_total(items: list[dict]) -> int:
+    return sum(item.get("unit_price", 0) * item.get("quantity", 0) for item in items)
+
+
+def check_declared_total(items: list[dict], total_amount: int) -> None:
+    expected = items_total(items)
+    if total_amount != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"신고 총액 {total_amount}가 항목 합계 {expected}와 다릅니다.",
+        )
 
 
 def _scaled(limit: int, campaign: Campaign) -> int:
@@ -35,12 +49,17 @@ async def violations(
     categories = policy.get("categories") or {}
     found: list[str] = []
 
+    declared = items_total(proof.items)
+    if declared != proof.amount:
+        found.append(f"신고 총액 {proof.amount}가 항목 합계 {declared}와 다릅니다.")
+
     if (
         categories
         and vendor.category != campaign.category
         and vendor.category not in categories
     ):
-        return [f"벤더 카테고리 '{vendor.category}'는 캠페인 정책에 없는 카테고리입니다."]
+        found.append(f"벤더 카테고리 '{vendor.category}'는 캠페인 정책에 없는 카테고리입니다.")
+        return found
 
     limits = categories.get(vendor.category) or {}
 
