@@ -2,6 +2,7 @@ import anchor from "@coral-xyz/anchor";
 import { encodeURL } from "@solana/pay";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Keypair, PublicKey, Transaction } from "@solana/web3.js";
+import type { ParsedTransactionWithMeta, TokenBalance } from "@solana/web3.js";
 
 import { PUBLIC_BASE_URL } from "./config.js";
 import {
@@ -64,11 +65,69 @@ export async function buildContributeTransaction(
   return transaction.serialize({ requireAllSignatures: false }).toString("base64");
 }
 
-export async function findReferenceSignature(reference: string): Promise<string | null> {
+export interface ReferenceCheck {
+  txSignature: string | null;
+  reason: string | null;
+}
+
+function escrowDelta(tx: ParsedTransactionWithMeta, escrowUsdc: string): bigint {
+  const keys = tx.transaction.message.accountKeys;
+  const mint = usdcMint.toBase58();
+  const pick = (balances: TokenBalance[] | null | undefined) =>
+    balances?.find(
+      (balance) =>
+        balance.mint === mint &&
+        keys[balance.accountIndex]?.pubkey.toBase58() === escrowUsdc
+    );
+
+  const before = BigInt(pick(tx.meta?.preTokenBalances)?.uiTokenAmount.amount ?? "0");
+  const after = BigInt(pick(tx.meta?.postTokenBalances)?.uiTokenAmount.amount ?? "0");
+  return after - before;
+}
+
+function callsEscrowProgram(tx: ParsedTransactionWithMeta): boolean {
+  const escrowProgram = program.programId.toBase58();
+  const outer = tx.transaction.message.instructions;
+  const inner = tx.meta?.innerInstructions?.flatMap((entry) => entry.instructions) ?? [];
+  return [...outer, ...inner].some(
+    (instruction) => instruction.programId.toBase58() === escrowProgram
+  );
+}
+
+export async function findReferenceSignature(
+  reference: string,
+  campaignUuid: string,
+  amount: bigint
+): Promise<ReferenceCheck> {
   const signatures = await connection.getSignaturesForAddress(
     new PublicKey(reference),
     { limit: 10 },
     "confirmed"
   );
-  return signatures.find((s) => s.err === null)?.signature ?? null;
+
+  const escrowUsdc = escrowAtaFor(campaignPdaFor(uuidToBytes(campaignUuid))).toBase58();
+  let reason: string | null = null;
+
+  for (const { signature, err } of signatures) {
+    if (err !== null) continue;
+
+    const tx = await connection.getParsedTransaction(signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!tx || tx.meta?.err) continue;
+
+    if (!callsEscrowProgram(tx)) {
+      reason = `escrow 프로그램을 호출하지 않은 트랜잭션입니다 (${signature})`;
+      continue;
+    }
+
+    const delta = escrowDelta(tx, escrowUsdc);
+    if (delta >= amount) {
+      return { txSignature: signature, reason: null };
+    }
+    reason = `escrow 입금액 ${delta}이 기대 금액 ${amount}에 미치지 않습니다 (${signature})`;
+  }
+
+  return { txSignature: null, reason };
 }

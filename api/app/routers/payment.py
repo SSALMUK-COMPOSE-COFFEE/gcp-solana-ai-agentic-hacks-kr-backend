@@ -52,6 +52,14 @@ async def _payment_by_reference(session: SessionDep, reference: str) -> PaymentR
     return payment
 
 
+async def _reference_status(session: SessionDep, payment: PaymentRequest) -> dict:
+    campaign = await session.get(Campaign, payment.campaign_id)
+    return await chain.get(
+        f"/pay/reference/{payment.reference}"
+        f"?campaignUuid={campaign.uuid}&amount={payment.amount}"
+    )
+
+
 async def _confirm(session: SessionDep, payment: PaymentRequest, signature: str) -> bool:
     claimed = await session.execute(
         update(PaymentRequest)
@@ -205,9 +213,10 @@ async def contribute(body: ContributeRequest, _: CurrentUser, session: SessionDe
     if not payment.contributor_wallet:
         raise HTTPException(status_code=400, detail=TX_VERIFY_FAILED)
 
-    result = await chain.get(f"/pay/reference/{body.reference}")
+    result = await _reference_status(session, payment)
     if result["status"] != "confirmed" or result["txSignature"] != body.tx_signature:
-        raise HTTPException(status_code=400, detail=TX_VERIFY_FAILED)
+        detail = f"{TX_VERIFY_FAILED} ({result['reason']})" if result.get("reason") else TX_VERIFY_FAILED
+        raise HTTPException(status_code=400, detail=detail)
 
     if not await _confirm(session, payment, body.tx_signature):
         raise HTTPException(status_code=409, detail=ALREADY_PROCESSED)
@@ -225,7 +234,7 @@ async def payment_status(ref: str, session: SessionDep) -> dict:
     payment = await _payment_by_reference(session, ref)
 
     if payment.status == PaymentStatus.PENDING and payment.contributor_wallet:
-        result = await chain.get(f"/pay/reference/{ref}")
+        result = await _reference_status(session, payment)
         if result["status"] == "confirmed":
             await _confirm(session, payment, result["txSignature"])
 

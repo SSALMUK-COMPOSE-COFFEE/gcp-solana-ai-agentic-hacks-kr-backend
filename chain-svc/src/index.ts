@@ -123,13 +123,24 @@ app.post("/pay/tx", async (c) => {
   return c.json({ transaction, message: `${PAY_LABEL} — ${usdc} USDC 기여` });
 });
 
+const ReferenceQuery = z.object({
+  campaignUuid: z.string().uuid(),
+  amount: z.coerce.bigint().positive(),
+});
+
 app.get("/pay/reference/:ref", async (c) => {
   const reference = c.req.param("ref");
-  const txSignature = await findReferenceSignature(reference);
+  const query = ReferenceQuery.parse(c.req.query());
+  const { txSignature, reason } = await findReferenceSignature(
+    reference,
+    query.campaignUuid,
+    query.amount
+  );
   return c.json({
     reference,
     status: txSignature ? "confirmed" : "pending",
     txSignature,
+    reason,
   });
 });
 
