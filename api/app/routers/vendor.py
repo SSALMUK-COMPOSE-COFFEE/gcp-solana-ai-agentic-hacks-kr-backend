@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
-from app.core import security, settlement
+from app.core import security, settlement, storage
 from app.core.deps import CurrentVendor, ServiceToken, SessionDep
 from app.models import Campaign, CampaignStatus, Proof, ProofStatus, ProofType, Vendor
 from app.schemas.vendor import RegisterVendorRequest, SubmitQuoteRequest
@@ -97,6 +97,7 @@ async def submit_quote(
         raise HTTPException(status_code=401, detail="벤더 인증이 필요합니다.")
     if not vendor.allowlisted:
         raise HTTPException(status_code=403, detail=NOT_ALLOWLISTED)
+    storage.validate_file_url(body.file_url)
 
     campaign = await session.get(Campaign, body.campaign_id)
     if campaign is None:

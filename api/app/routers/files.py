@@ -1,18 +1,16 @@
-import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
 
 from app.core.config import settings
-from app.core.storage import EXTENSIONS
+from app.core.storage import MIME_BY_EXTENSION, NAME_PATTERN
 
 router = APIRouter(prefix="/static", tags=["static"])
 
 FILE_NOT_FOUND = "존재하지 않는 파일입니다."
 
-MEDIA_TYPES = {extension: mime for mime, extension in EXTENSIONS.items()} | {".svg": "image/svg+xml"}
-NAME_PATTERN = re.compile(rf"^[0-9a-f]{{32}}({'|'.join(re.escape(e) for e in EXTENSIONS.values())})$")
+MEDIA_TYPES = MIME_BY_EXTENSION | {".svg": "image/svg+xml"}
 
 ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 SERVICE_ASSETS = {"icon.png", "icon.svg", "icon.webp"}

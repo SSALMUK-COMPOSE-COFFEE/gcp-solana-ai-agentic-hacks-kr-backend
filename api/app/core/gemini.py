@@ -1,20 +1,18 @@
 import json
 from typing import Literal
 
-import httpx
 from fastapi import HTTPException
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
+from app.core import storage
 from app.core.config import settings
 
 NOT_CONFIGURED = "AI 에이전트가 설정되지 않았습니다."
 EVALUATION_FAILED = "정책 판단에 실패했습니다. 잠시 후 다시 시도해 주세요."
 
 USDC_UNIT = 1_000_000
-FILE_MAX_BYTES = 15 * 1024 * 1024
-READABLE_TYPES = ("image/", "application/pdf")
 
 SYSTEM_INSTRUCTION = """너는 팬덤 모금 캠페인의 지출을 심사하는 정책 판단 에이전트다.
 총대(운영자)가 자금을 임의로 쓰지 못하도록, 벤더의 지출 요청이 캠페인 정책에 맞는지만 판단한다.
@@ -74,23 +72,12 @@ def _client() -> genai.Client:
 
 
 async def fetch_document(url: str | None) -> types.Part | None:
-    if not url or not url.startswith(("http://", "https://")):
+    path = storage.local_path(url)
+    if path is None:
         return None
-
-    try:
-        async with httpx.AsyncClient(timeout=20.0, follow_redirects=True) as client:
-            response = await client.get(url)
-    except httpx.HTTPError:
-        return None
-
-    if response.status_code >= 400 or len(response.content) > FILE_MAX_BYTES:
-        return None
-
-    mime_type = response.headers.get("content-type", "").split(";")[0].strip()
-    if not mime_type.startswith(READABLE_TYPES):
-        return None
-
-    return types.Part.from_bytes(data=response.content, mime_type=mime_type)
+    return types.Part.from_bytes(
+        data=path.read_bytes(), mime_type=storage.MIME_BY_EXTENSION[path.suffix]
+    )
 
 
 def amount(raw: int) -> dict:

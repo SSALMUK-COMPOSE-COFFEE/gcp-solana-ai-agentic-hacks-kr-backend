@@ -27,6 +27,7 @@ async def submit_receipt(
 ) -> dict:
     if not vendor.allowlisted:
         raise HTTPException(status_code=403, detail=NOT_ALLOWLISTED)
+    storage.validate_file_url(body.file_url)
 
     campaign = await session.get(Campaign, body.campaign_id)
     if campaign is None:
