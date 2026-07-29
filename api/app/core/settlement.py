@@ -18,6 +18,8 @@ from app.models import (
 
 NOT_ALLOWLISTED = "검증되지 않은 지출이거나 allowlist 벤더가 아닙니다."
 NOT_QUOTE = "견적 증빙만 집행할 수 있습니다."
+VENDOR_MISMATCH = "증빙을 제출한 벤더에게만 집행할 수 있습니다."
+AMOUNT_MISMATCH = "집행 금액은 승인된 증빙 금액과 같아야 합니다."
 ALREADY_RELEASED = "이미 지급된 증빙입니다."
 NOT_EXECUTING = "집행 가능한 상태의 캠페인이 아닙니다."
 INSUFFICIENT = "에스크로 잔액이 부족합니다."
@@ -68,6 +70,10 @@ def check_releasable(campaign: Campaign, vendor: Vendor | None, proof: Proof, am
         raise HTTPException(status_code=409, detail=NOT_QUOTE)
     if vendor is None or not vendor.allowlisted or proof.status != ProofStatus.APPROVED:
         raise HTTPException(status_code=403, detail=NOT_ALLOWLISTED)
+    if proof.vendor_id is None or vendor.id != proof.vendor_id:
+        raise HTTPException(status_code=403, detail=VENDOR_MISMATCH)
+    if amount != proof.amount:
+        raise HTTPException(status_code=400, detail=AMOUNT_MISMATCH)
     if is_self_dealing(campaign, vendor):
         raise HTTPException(status_code=403, detail=SELF_DEALING)
     if proof.release_tx is not None:
