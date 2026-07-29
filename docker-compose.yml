@@ -36,8 +36,10 @@ services:
     environment:
       PORT: ${CHAIN_SVC_PORT}
       AGENT_AUTHORITY_KEYPAIR: /run/secrets/agent-authority.json
+      X402_KEYPAIR: /run/secrets/agent-mainnet.json
     volumes:
       - ${HOME}/.keys/chongdae/agent-authority.json:/run/secrets/agent-authority.json:ro
+      - ${HOME}/.keys/chongdae/agent-mainnet.json:/run/secrets/agent-mainnet.json:ro
 
 volumes:
   dbdata:

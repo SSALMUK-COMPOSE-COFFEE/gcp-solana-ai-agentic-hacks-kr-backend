@@ -4,7 +4,8 @@ import { PublicKey } from "@solana/web3.js";
 import { Hono } from "hono";
 import { z } from "zod";
 
-import { PAY_ICON, PAY_LABEL, PORT, SOLANA_RPC_URL } from "./config.js";
+import { GEMINI_GATEWAY_URL, PAY_ICON, PAY_LABEL, PORT, SOLANA_RPC_URL } from "./config.js";
+import { fetchWithPayment } from "./x402/client.js";
 import {
   buildContributeTransaction,
   findReferenceSignature,
@@ -215,6 +216,35 @@ app.post("/tx/micropay", async (c) => {
     idempotencyCache.set(body.idemKey, result.signature);
   }
   return c.json(result);
+});
+
+const AiGenerateBody = z.object({
+  model: z.string(),
+  request: z.record(z.unknown()),
+});
+
+app.post("/ai/generate", async (c) => {
+  const body = AiGenerateBody.parse(await c.req.json());
+  const url = `${GEMINI_GATEWAY_URL}/v1beta/models/${body.model}:generateContent`;
+
+  const result = await fetchWithPayment(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body.request),
+  });
+
+  if (result.status >= 400) {
+    return c.json({ message: "게이트웨이 호출에 실패했습니다.", detail: result.body }, 502);
+  }
+
+  return c.json({
+    response: result.body,
+    payment: {
+      authorized: result.authorized,
+      settled: result.settled,
+      channelId: result.channelId,
+    },
+  });
 });
 
 app.post("/nft/certificate", async (c) => c.json({ todo: "cnft mint" }, 501));
