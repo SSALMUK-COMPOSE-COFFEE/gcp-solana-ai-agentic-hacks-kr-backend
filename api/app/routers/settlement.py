@@ -10,6 +10,7 @@ from app.models import (
     Campaign,
     CampaignStatus,
     Contribution,
+    Micropay,
     Proof,
     Vendor,
 )
@@ -101,6 +102,13 @@ async def read_settlement(campaign_id: int, session: SessionDep) -> dict:
     if campaign is None:
         raise HTTPException(status_code=404, detail=CAMPAIGN_NOT_FOUND)
 
+    receipts = await session.exec(
+        select(Micropay)
+        .where(Micropay.campaign_id == campaign_id, Micropay.paid == True)  # noqa: E712
+        .order_by(Micropay.created_at.desc())
+    )
+    rows = receipts.all()
+
     return {
         "campaignId": campaign.id,
         "status": campaign.status,
@@ -109,6 +117,12 @@ async def read_settlement(campaign_id: int, session: SessionDep) -> dict:
         "refundedAmount": campaign.refunded_amount,
         "remainingInEscrow": settlement.available_balance(campaign),
         "escrowPda": campaign.escrow_pda,
+        "aiReviewBudget": (campaign.policy or {}).get("aiReviewBudget"),
+        "aiReviewCost": sum(row.amount for row in rows),
+        "aiReceipts": [
+            {"resource": row.resource, "amount": row.amount, "txSignature": row.tx_signature}
+            for row in rows
+        ],
     }
 
 

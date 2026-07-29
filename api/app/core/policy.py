@@ -2,9 +2,31 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlmodel import select
 
-from app.models import Campaign, Proof, ProofType, Vendor
+from app.models import Campaign, Micropay, Proof, ProofType, Vendor
 
 RULE_MODEL = "rule-based"
+BUDGET_EXHAUSTED = "이 캠페인의 AI 심사 예산이 소진되었습니다."
+
+
+async def ai_review_spent(session, campaign_id: int) -> int:
+    result = await session.exec(
+        select(func.coalesce(func.sum(Micropay.amount), 0)).where(
+            Micropay.campaign_id == campaign_id,
+            Micropay.paid == True,  # noqa: E712
+        )
+    )
+    return int(result.one())
+
+
+async def check_ai_review_budget(session, campaign: Campaign, cost: int) -> dict:
+    budget = (campaign.policy or {}).get("aiReviewBudget")
+    spent = await ai_review_spent(session, campaign.id)
+    if isinstance(budget, int) and spent + cost > budget:
+        raise HTTPException(
+            status_code=402,
+            detail=f"{BUDGET_EXHAUSTED} (한도 {budget} / 사용 {spent} / 이번 심사 {cost} raw units)",
+        )
+    return {"budget": budget, "spent": spent}
 
 
 def items_total(items: list[dict]) -> int:

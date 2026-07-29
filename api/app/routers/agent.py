@@ -76,6 +76,10 @@ async def evaluate_policy(
                 "execution": None,
             }
 
+    budget = await policy.check_ai_review_budget(
+        session, campaign, settings.paysh_gemini_cost
+    )
+
     tier_rows = await session.exec(
         select(RewardTier).where(RewardTier.campaign_id == campaign.id)
     )
@@ -133,7 +137,13 @@ async def evaluate_policy(
         micropay = await paysh.micropay(
             session, settings.gemini_model, settings.paysh_gemini_cost, campaign.id
         )
-        micropay_result = {"paid": True, "txSignature": micropay.tx_signature}
+        micropay_result = {
+            "paid": True,
+            "txSignature": micropay.tx_signature,
+            "amount": micropay.amount,
+            "campaignSpent": budget["spent"] + micropay.amount,
+            "campaignBudget": budget["budget"],
+        }
     except HTTPException as failed:
         micropay_result = {"paid": False, "reason": failed.detail}
 

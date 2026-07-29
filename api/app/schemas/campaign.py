@@ -15,6 +15,7 @@ class CampaignPolicy(CamelModel):
     categories: dict[str, CategoryPolicy] = Field(default_factory=dict)
     max_per_category: int | None = Field(default=None, gt=0)
     allow_surplus_scaling: bool = False
+    ai_review_budget: int | None = Field(default=None, gt=0)
 
     def to_stored(self) -> dict:
         return self.model_dump(by_alias=True, exclude_none=True)
