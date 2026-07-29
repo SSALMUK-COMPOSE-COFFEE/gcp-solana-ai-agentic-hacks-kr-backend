@@ -50,6 +50,7 @@ async def refund(campaign_id: int, _: ServiceToken, session: SessionDep) -> dict
         raise HTTPException(status_code=404, detail=CAMPAIGN_NOT_FOUND)
 
     await settlement.lazy_close(session, campaign)
+    await session.refresh(campaign, with_for_update=True)
     if campaign.status != CampaignStatus.REFUNDING:
         raise HTTPException(status_code=409, detail=REFUND_NOT_ALLOWED)
 

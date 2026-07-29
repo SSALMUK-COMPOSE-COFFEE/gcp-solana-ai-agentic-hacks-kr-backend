@@ -1,6 +1,7 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.core import policy, storage
+from app.core.config import settings
 from app.core.deps import CurrentVendor, SessionDep
 from app.models import Campaign, Proof, ProofType, Vendor
 from app.schemas.proof import SubmitReceiptRequest
@@ -16,6 +17,9 @@ NOT_ALLOWLISTED = "allowlist에 등재되지 않은 벤더입니다."
 async def upload_document(vendor: CurrentVendor, file: UploadFile = File(...)) -> dict:
     if not vendor.allowlisted:
         raise HTTPException(status_code=403, detail=NOT_ALLOWLISTED)
+
+    if file.size is not None and file.size > settings.storage_max_bytes:
+        raise HTTPException(status_code=413, detail=storage.TOO_LARGE)
 
     content = await file.read()
     return {"fileUrl": storage.save(content, file.content_type or "")}
