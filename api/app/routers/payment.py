@@ -157,6 +157,8 @@ async def solana_pay_transaction(
     ref: str, body: SolanaPayTxRequest, session: SessionDep
 ) -> dict:
     payment = await _payment_by_reference(session, ref)
+    if payment.status == PaymentStatus.CONFIRMED:
+        raise HTTPException(status_code=409, detail=ALREADY_PROCESSED)
     campaign = await _open_campaign(session, payment.campaign_id)
 
     built = await chain.post(
@@ -178,18 +180,27 @@ async def solana_pay_transaction(
 
 @router.post("/paysh/micropay")
 async def paysh_micropay(body: MicropayRequest, _: ServiceToken, session: SessionDep) -> dict:
-    record = await paysh.micropay(session, body.resource, body.amount)
+    record = await paysh.micropay(session, body.resource, body.amount, body.campaign_id)
     await session.commit()
 
     return {"paid": True, "txSignature": record.tx_signature}
 
 
 @router.get("/paysh/usage")
-async def paysh_usage(_: CurrentUser, session: SessionDep) -> dict:
-    result = await session.exec(select(Micropay).order_by(Micropay.created_at.desc()))
+async def paysh_usage(campaignId: int, _: CurrentUser, session: SessionDep) -> dict:
+    campaign = await session.get(Campaign, campaignId)
+    if campaign is None:
+        raise HTTPException(status_code=404, detail=CAMPAIGN_NOT_FOUND)
+
+    result = await session.exec(
+        select(Micropay)
+        .where(Micropay.campaign_id == campaignId)
+        .order_by(Micropay.created_at.desc())
+    )
     rows = result.all()
 
     return {
+        "campaignId": campaignId,
         "totalSpent": sum(row.amount for row in rows if row.paid),
         "items": [
             {

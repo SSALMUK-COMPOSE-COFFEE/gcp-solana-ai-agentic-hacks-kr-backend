@@ -128,7 +128,7 @@ async def evaluate_policy(
 
     try:
         micropay = await paysh.micropay(
-            session, settings.gemini_model, settings.paysh_gemini_cost
+            session, settings.gemini_model, settings.paysh_gemini_cost, campaign.id
         )
         micropay_result = {"paid": True, "txSignature": micropay.tx_signature}
     except HTTPException as failed:

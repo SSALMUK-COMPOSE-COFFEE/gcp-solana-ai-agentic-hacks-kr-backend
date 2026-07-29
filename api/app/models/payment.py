@@ -43,6 +43,7 @@ class Micropay(SQLModel, table=True):
     __tablename__ = "micropays"
 
     id: int | None = Field(default=None, primary_key=True)
+    campaign_id: int | None = Field(default=None, foreign_key="campaigns.id", index=True)
     resource: str = Field(index=True)
     amount: int = Field(sa_column=amount_column())
     paid: bool = Field(default=False, sa_column=bool_false_column())
