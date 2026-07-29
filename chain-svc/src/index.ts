@@ -28,6 +28,23 @@ const { BN } = anchor;
 const app = new Hono();
 
 const idempotencyCache = new Map<string, string>();
+const inflight = new Map<string, Promise<string>>();
+
+async function onceByKey(idemKey: string, run: () => Promise<string>) {
+  const cached = idempotencyCache.get(idemKey) ?? (await inflight.get(idemKey));
+  if (cached) return { signature: cached, replayed: true };
+
+  const task = run().then((signature) => {
+    idempotencyCache.set(idemKey, signature);
+    return signature;
+  });
+  inflight.set(idemKey, task);
+  try {
+    return { signature: await task, replayed: false };
+  } finally {
+    inflight.delete(idemKey);
+  }
+}
 
 app.onError((err, c) => {
   if (err instanceof z.ZodError) {
@@ -162,21 +179,13 @@ const ReleaseBody = z.object({
 app.post("/tx/release", async (c) => {
   const body = ReleaseBody.parse(await c.req.json());
 
-  const cached = idempotencyCache.get(body.idemKey);
-  if (cached) {
-    return c.json({
-      signature: cached,
-      replayed: true,
-      status: await campaignStatus(body.campaignUuid),
-    });
-  }
-
-  const signature = await release(body.campaignUuid, body.vendorWallet, body.amount);
-  idempotencyCache.set(body.idemKey, signature);
+  const { signature, replayed } = await onceByKey(body.idemKey, () =>
+    release(body.campaignUuid, body.vendorWallet, body.amount)
+  );
 
   return c.json({
     signature,
-    replayed: false,
+    replayed,
     status: await campaignStatus(body.campaignUuid),
   });
 });

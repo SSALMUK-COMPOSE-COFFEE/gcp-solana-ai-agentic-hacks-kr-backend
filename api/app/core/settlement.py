@@ -1,6 +1,7 @@
 from uuid import NAMESPACE_URL, uuid5
 
 from fastapi import HTTPException
+from sqlalchemy import update
 
 from app.core import chain, policy
 from app.models import (
@@ -87,6 +88,8 @@ def check_releasable(campaign: Campaign, vendor: Vendor | None, proof: Proof, am
 async def release(
     session, campaign: Campaign, vendor: Vendor, proof: Proof, amount: int
 ) -> dict:
+    await session.refresh(campaign, with_for_update=True)
+    await session.refresh(proof)
     check_releasable(campaign, vendor, proof, amount)
 
     found = await policy.violations(session, campaign, vendor, proof, amount)
@@ -104,13 +107,14 @@ async def release(
     )
 
     proof.release_tx = result["signature"]
-    campaign.released_amount += amount
+
+    values = {"released_amount": Campaign.released_amount + amount}
     if result.get("status") in ONCHAIN_STATUS:
-        campaign.status = ONCHAIN_STATUS[result["status"]]
+        values["status"] = ONCHAIN_STATUS[result["status"]]
+    await session.execute(update(Campaign).where(Campaign.id == campaign.id).values(**values))
 
     session.add_all(
         [
-            campaign,
             proof,
             AgentDecision(
                 campaign_id=campaign.id,
@@ -127,5 +131,6 @@ async def release(
         ]
     )
     await session.commit()
+    await session.refresh(campaign)
 
     return {"txSignature": result["signature"], "releasedAmount": amount}
