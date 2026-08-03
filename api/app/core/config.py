@@ -36,6 +36,8 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+    ai_rail: str = "direct"
+    x402_review_reserve: int = 250_000
 
 
 @lru_cache

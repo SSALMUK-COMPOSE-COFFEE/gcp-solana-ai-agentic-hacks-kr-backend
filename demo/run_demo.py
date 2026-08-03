@@ -36,6 +36,12 @@ def link(label: str, signature: str) -> None:
     info("tx", url)
 
 
+def mainnet_link(label: str, kind: str, address: str) -> None:
+    url = f"https://explorer.solana.com/{kind}/{address}"
+    LINKS.append((label, url))
+    info(kind, url)
+
+
 def expect(label: str, got: int, want: int, detail: str = "") -> None:
     ok = got == want
     mark = "\033[32m✅\033[0m" if ok else "\033[31m❌\033[0m"
@@ -184,7 +190,7 @@ def main() -> None:
         "deadline": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 86400)),
         "policy": {
             "categories": {"굿즈": {"maxUnitPrice": 1 * USDC, "maxTotal": 3 * USDC, "unitLabel": "개"}},
-            "aiReviewBudget": 2000,
+            "aiReviewBudget": 250_000,
             "allowSurplusScaling": False,
         },
     }), "캠페인 생성")
@@ -266,9 +272,14 @@ def main() -> None:
     info("파일 판독", verdict["readFile"])
     for reason in verdict["reasons"][:4]:
         print(f"      · {reason}")
-    if verdict["micropay"].get("paid"):
-        info("AI 심사비", f"{verdict['micropay']['amount']} raw units")
-        link("micropay", verdict["micropay"]["txSignature"])
+    pay = verdict["micropay"]
+    if pay.get("paid"):
+        if pay.get("rail") == "x402":
+            info("AI 심사비", f"예약 {pay['authorized']} raw units — mainnet USDC 실결제")
+            mainnet_link("AI 결제 채널", "address", pay["channelId"])
+        else:
+            info("AI 심사비", f"{pay['amount']} raw units")
+            link("micropay", pay["txSignature"])
     execution = verdict.get("execution") or {}
     if execution.get("executed"):
         info("자동 집행", f"{execution['releasedAmount']} raw units → 벤더")
@@ -328,7 +339,11 @@ def defenses(cid, pid, vid, vkey, file_url, leader_token, stamp, other_wallet, s
                          ("AI 심사 비용", settlement["aiReviewCost"])]:
         info(label, f"{value} raw units ({value / USDC:.2f} USDC)")
     for r in settlement["aiReceipts"]:
-        info("AI 영수증", r["txSignature"])
+        if r.get("rail") == "x402":
+            state = "확정" if r["settled"] else "정산 대기"
+            info("AI 영수증", f"[mainnet x402/{state}] 채널 {r['channelId']}")
+        else:
+            info("AI 영수증", r["txSignature"])
 
     print("\n\033[1m온체인 증빙 (Explorer)\033[0m")
     for label, url in LINKS:

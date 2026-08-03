@@ -1,12 +1,13 @@
+import base64
 import json
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from fastapi import HTTPException
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-from app.core import storage
+from app.core import chain, storage
 from app.core.config import settings
 
 NOT_CONFIGURED = "AI 에이전트가 설정되지 않았습니다."
@@ -65,17 +66,33 @@ class PolicyDecision(BaseModel):
     reasons: list[str]
 
 
+class Document(NamedTuple):
+    data: bytes
+    mime_type: str
+
+
+RESPONSE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "decision": {"type": "STRING", "enum": ["approve", "reject"]},
+        "required_amount": {"type": "INTEGER"},
+        "reasons": {"type": "ARRAY", "items": {"type": "STRING"}},
+    },
+    "required": ["decision", "required_amount", "reasons"],
+}
+
+
 def _client() -> genai.Client:
     if not settings.gemini_api_key:
         raise HTTPException(status_code=503, detail=NOT_CONFIGURED)
     return genai.Client(api_key=settings.gemini_api_key)
 
 
-async def fetch_document(url: str | None) -> types.Part | None:
+async def fetch_document(url: str | None) -> Document | None:
     path = storage.local_path(url)
     if path is None:
         return None
-    return types.Part.from_bytes(
+    return Document(
         data=path.read_bytes(), mime_type=storage.MIME_BY_EXTENSION[path.suffix]
     )
 
@@ -101,10 +118,12 @@ def build_prompt(
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-async def evaluate_policy(prompt: str, document: types.Part | None) -> PolicyDecision:
+async def _direct(prompt: str, document: Document | None) -> PolicyDecision:
     parts: list = [types.Part.from_text(text=prompt)]
     if document is not None:
-        parts.append(document)
+        parts.append(
+            types.Part.from_bytes(data=document.data, mime_type=document.mime_type)
+        )
 
     try:
         response = await _client().aio.models.generate_content(
@@ -125,3 +144,67 @@ async def evaluate_policy(prompt: str, document: types.Part | None) -> PolicyDec
         raise HTTPException(status_code=502, detail=EVALUATION_FAILED)
 
     return decision
+
+
+def _answer_text(response: object) -> str:
+    if not isinstance(response, dict):
+        raise ValueError("응답 형식이 올바르지 않습니다.")
+    candidates = response.get("candidates") or []
+    if not candidates:
+        raise ValueError("응답에 candidates가 없습니다.")
+    for part in (candidates[0].get("content") or {}).get("parts") or []:
+        text = part.get("text")
+        if text:
+            return text
+    raise ValueError("응답에 텍스트 파트가 없습니다.")
+
+
+async def _gateway(prompt: str, document: Document | None) -> tuple[PolicyDecision, dict]:
+    parts: list[dict] = [{"text": prompt}]
+    if document is not None:
+        parts.append(
+            {
+                "inlineData": {
+                    "mimeType": document.mime_type,
+                    "data": base64.b64encode(document.data).decode(),
+                }
+            }
+        )
+
+    result = await chain.post(
+        "/ai/generate",
+        {
+            "model": settings.gemini_model,
+            "request": {
+                "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION}]},
+                "contents": [{"role": "user", "parts": parts}],
+                "generationConfig": {
+                    "responseMimeType": "application/json",
+                    "responseSchema": RESPONSE_SCHEMA,
+                    "temperature": 0.0,
+                },
+            },
+        },
+    )
+
+    decision = PolicyDecision.model_validate_json(_answer_text(result.get("response")))
+    payment = result.get("payment") or {}
+    return decision, {"rail": "gateway", **payment}
+
+
+async def evaluate_policy(
+    prompt: str, document: Document | None
+) -> tuple[PolicyDecision, dict]:
+    if settings.ai_rail != "gateway":
+        return await _direct(prompt, document), {"rail": "direct"}
+
+    try:
+        return await _gateway(prompt, document)
+    except Exception as failed:
+        reason = getattr(failed, "detail", None) or str(failed)
+
+    return await _direct(prompt, document), {
+        "rail": "direct",
+        "fallbackFrom": "gateway",
+        "reason": reason,
+    }

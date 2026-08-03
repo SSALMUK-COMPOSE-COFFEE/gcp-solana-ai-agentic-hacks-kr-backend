@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlmodel import select
 
 from app.models import Campaign, Micropay, Proof, ProofType, Vendor
@@ -7,10 +7,15 @@ from app.models import Campaign, Micropay, Proof, ProofType, Vendor
 RULE_MODEL = "rule-based"
 BUDGET_EXHAUSTED = "이 캠페인의 AI 심사 예산이 소진되었습니다."
 
+_charged = case(
+    (Micropay.settled == True, Micropay.amount),  # noqa: E712
+    else_=func.coalesce(Micropay.authorized_amount, Micropay.amount),
+)
+
 
 async def ai_review_spent(session, campaign_id: int) -> int:
     result = await session.exec(
-        select(func.coalesce(func.sum(Micropay.amount), 0)).where(
+        select(func.coalesce(func.sum(_charged), 0)).where(
             Micropay.campaign_id == campaign_id,
             Micropay.paid == True,  # noqa: E712
         )

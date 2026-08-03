@@ -6,6 +6,7 @@ import { z } from "zod";
 
 import { GEMINI_GATEWAY_URL, PAY_ICON, PAY_LABEL, PORT, SOLANA_RPC_URL } from "./config.js";
 import { fetchWithPayment } from "./x402/client.js";
+import { resolveSettlement } from "./x402/settlement.js";
 import {
   buildContributeTransaction,
   findReferenceSignature,
@@ -245,6 +246,14 @@ app.post("/ai/generate", async (c) => {
       channelId: result.channelId,
     },
   });
+});
+
+app.get("/x402/channel/:channelId/settlement", async (c) => {
+  try {
+    return c.json(await resolveSettlement(c.req.param("channelId")));
+  } catch {
+    return c.json({ message: "채널 정산 조회에 실패했습니다." }, 502);
+  }
 });
 
 app.post("/nft/certificate", async (c) => c.json({ todo: "cnft mint" }, 501));

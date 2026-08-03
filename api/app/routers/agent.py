@@ -76,9 +76,12 @@ async def evaluate_policy(
                 "execution": None,
             }
 
-    budget = await policy.check_ai_review_budget(
-        session, campaign, settings.paysh_gemini_cost
+    review_cost = (
+        settings.x402_review_reserve
+        if settings.ai_rail == "gateway"
+        else settings.paysh_gemini_cost
     )
+    budget = await policy.check_ai_review_budget(session, campaign, review_cost)
 
     tier_rows = await session.exec(
         select(RewardTier).where(RewardTier.campaign_id == campaign.id)
@@ -130,20 +133,37 @@ async def evaluate_policy(
     )
 
     document = await gemini.fetch_document(proof.file_url)
-    decision = await gemini.evaluate_policy(prompt, document)
+    decision, ai_payment = await gemini.evaluate_policy(prompt, document)
     approved = decision.decision == AgentDecisionType.APPROVE
 
     try:
-        micropay = await paysh.micropay(
-            session, settings.gemini_model, settings.paysh_gemini_cost, campaign.id
-        )
-        micropay_result = {
-            "paid": True,
-            "txSignature": micropay.tx_signature,
-            "amount": micropay.amount,
-            "campaignSpent": budget["spent"] + micropay.amount,
-            "campaignBudget": budget["budget"],
-        }
+        if ai_payment.get("rail") == "gateway":
+            receipt = await paysh.x402_receipt(
+                session, settings.gemini_model, ai_payment, campaign.id
+            )
+            micropay_result = {
+                "paid": True,
+                "rail": receipt.rail,
+                "channelId": receipt.channel_id,
+                "authorized": receipt.authorized_amount,
+                "amount": receipt.amount,
+                "settled": receipt.settled,
+                "campaignSpent": budget["spent"] + (receipt.authorized_amount or 0),
+                "campaignBudget": budget["budget"],
+            }
+        else:
+            micropay = await paysh.micropay(
+                session, settings.gemini_model, settings.paysh_gemini_cost, campaign.id
+            )
+            micropay_result = {
+                "paid": True,
+                "rail": micropay.rail,
+                "txSignature": micropay.tx_signature,
+                "amount": micropay.amount,
+                "settled": micropay.settled,
+                "campaignSpent": budget["spent"] + micropay.amount,
+                "campaignBudget": budget["budget"],
+            }
     except HTTPException as failed:
         micropay_result = {"paid": False, "reason": failed.detail}
 
@@ -169,6 +189,7 @@ async def evaluate_policy(
         "readFile": document is not None,
         "model": settings.gemini_model,
         "micropay": micropay_result,
+        "aiPayment": ai_payment,
         "execution": await _execute(session, campaign, vendor, proof) if approved else None,
     }
 

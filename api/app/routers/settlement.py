@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from sqlmodel import select
 
-from app.core import chain, settlement
+from app.core import chain, paysh, policy, settlement
 from app.core.deps import ServiceToken, SessionDep
 from app.models import (
     AgentDecision,
@@ -107,7 +107,8 @@ async def read_settlement(campaign_id: int, session: SessionDep) -> dict:
         .where(Micropay.campaign_id == campaign_id, Micropay.paid == True)  # noqa: E712
         .order_by(Micropay.created_at.desc())
     )
-    rows = receipts.all()
+    rows = list(receipts.all())
+    await paysh.settle_x402(session, rows)
 
     return {
         "campaignId": campaign.id,
@@ -118,9 +119,17 @@ async def read_settlement(campaign_id: int, session: SessionDep) -> dict:
         "remainingInEscrow": settlement.available_balance(campaign),
         "escrowPda": campaign.escrow_pda,
         "aiReviewBudget": (campaign.policy or {}).get("aiReviewBudget"),
-        "aiReviewCost": sum(row.amount for row in rows),
+        "aiReviewCost": await policy.ai_review_spent(session, campaign_id),
         "aiReceipts": [
-            {"resource": row.resource, "amount": row.amount, "txSignature": row.tx_signature}
+            {
+                "resource": row.resource,
+                "rail": row.rail,
+                "amount": row.amount,
+                "authorized": row.authorized_amount,
+                "settled": row.settled,
+                "channelId": row.channel_id,
+                "txSignature": row.tx_signature,
+            }
             for row in rows
         ],
     }
