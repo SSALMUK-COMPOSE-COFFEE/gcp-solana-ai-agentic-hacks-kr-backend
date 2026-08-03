@@ -1,0 +1,152 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: chongdae-api
+  labels:
+    cloud.googleapis.com/location: asia-northeast3
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        # chain-svc 멱등키가 인메모리 Map — 스케일 아웃 시 이중 지급 위험으로 1 고정
+        autoscaling.knative.dev/maxScale: "1"
+        run.googleapis.com/cloudsql-instances: chongdae-hackathon:asia-northeast3:chongdae-db
+        run.googleapis.com/container-dependencies: '{"api":["chain-svc"]}'
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - name: api
+          image: asia-northeast3-docker.pkg.dev/chongdae-hackathon/chongdae/api:v1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ROOT_PATH
+              value: /api
+            - name: APP_VERSION
+              value: 0.1.0
+            - name: PUBLIC_BASE_URL
+              value: https://chongdae.hajin.xyz/api
+            - name: CHAIN_SVC_URL
+              value: http://localhost:8081
+            - name: CHAIN_ENABLED
+              value: "true"
+            - name: CHAIN_SVC_TIMEOUT
+              value: "60"
+            - name: STORAGE_BACKEND
+              value: local
+            - name: STORAGE_DIR
+              value: /data/uploads
+            - name: STORAGE_PUBLIC_BASE_URL
+              value: https://chongdae.hajin.xyz/api/static
+            - name: SOLANA_RPC_URL
+              value: https://api.devnet.solana.com
+            - name: USDC_MINT
+              value: 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+            - name: JWT_ALGORITHM
+              value: HS256
+            - name: ACCESS_TOKEN_TTL
+              value: "3600"
+            - name: REFRESH_TOKEN_TTL
+              value: "1209600"
+            - name: NONCE_TTL
+              value: "300"
+            - name: PAY_LABEL
+              value: 팬덤 총대 에이전트
+            - name: PAY_ICON
+              value: https://chongdae.hajin.xyz/api/static/icon.png
+            - name: GEMINI_MODEL
+              value: gemini-3.5-flash-lite
+            - name: AI_RAIL
+              value: gateway
+            - name: PAYSH_TREASURY
+              value: BPTVJRSyt5Af4RtRNujvVii7tNxnx5XehDKAystQeRZV
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: database-url
+                  key: latest
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-secret
+                  key: latest
+            - name: SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: service-token
+                  key: latest
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: gemini-api-key
+                  key: latest
+            - name: WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: webhook-secret
+                  key: latest
+          volumeMounts:
+            - name: uploads
+              mountPath: /data/uploads
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+        - name: chain-svc
+          image: asia-northeast3-docker.pkg.dev/chongdae-hackathon/chongdae/chain-svc:v1
+          env:
+            - name: PORT
+              value: "8081"
+            - name: SOLANA_RPC_URL
+              value: https://api.devnet.solana.com
+            - name: USDC_MINT
+              value: 4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU
+            - name: PUBLIC_BASE_URL
+              value: https://chongdae.hajin.xyz/api
+            - name: PAY_LABEL
+              value: 팬덤 총대 에이전트
+            - name: PAY_ICON
+              value: https://chongdae.hajin.xyz/api/static/icon.png
+            - name: PAYSH_TREASURY
+              value: BPTVJRSyt5Af4RtRNujvVii7tNxnx5XehDKAystQeRZV
+            - name: AI_RAIL
+              value: gateway
+            - name: AGENT_AUTHORITY_KEYPAIR
+              value: /run/keys/agent-authority.json
+            - name: X402_KEYPAIR
+              value: /run/keys-mainnet/agent-mainnet.json
+          startupProbe:
+            tcpSocket:
+              port: 8081
+            periodSeconds: 5
+            failureThreshold: 30
+          volumeMounts:
+            - name: authority-key
+              mountPath: /run/keys
+            - name: mainnet-key
+              mountPath: /run/keys-mainnet
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+      volumes:
+        - name: uploads
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            volumeAttributes:
+              bucketName: chongdae-uploads
+        - name: authority-key
+          secret:
+            secretName: agent-authority-keypair
+            items:
+              - key: latest
+                path: agent-authority.json
+        - name: mainnet-key
+          secret:
+            secretName: agent-mainnet-keypair
+            items:
+              - key: latest
+                path: agent-mainnet.json

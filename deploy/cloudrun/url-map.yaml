@@ -1,0 +1,19 @@
+name: chongdae-um
+defaultService: https://www.googleapis.com/compute/v1/projects/chongdae-hackathon/global/backendServices/chongdae-web-bs
+hostRules:
+  - hosts:
+      - chongdae.hajin.xyz
+    pathMatcher: main
+pathMatchers:
+  - name: main
+    defaultService: https://www.googleapis.com/compute/v1/projects/chongdae-hackathon/global/backendServices/chongdae-web-bs
+    routeRules:
+      - priority: 1
+        matchRules:
+          - prefixMatch: /api/
+        routeAction:
+          urlRewrite:
+            pathPrefixRewrite: /
+          weightedBackendServices:
+            - backendService: https://www.googleapis.com/compute/v1/projects/chongdae-hackathon/global/backendServices/chongdae-api-bs
+              weight: 100
